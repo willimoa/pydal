@@ -11,7 +11,7 @@ import time
 import base64
 import types
 
-from .._compat import pjoin, exists, pickle, hashlib_md5, iterkeys, with_metaclass
+from .._compat import PY2, pjoin, exists, pickle, hashlib_md5, iterkeys, with_metaclass
 from .._globals import IDENTITY
 from .._load import portalocker, json
 from .._gae import gae
@@ -1374,7 +1374,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             return str(long(obj))
         elif fieldtype == 'double':
             return repr(float(obj))
-        if isinstance(obj, unicode):
+        if PY2 and isinstance(obj, unicode):
             obj = obj.encode(self.db_codec)
         if fieldtype == 'blob':
             obj = base64.b64encode(str(obj))
@@ -1429,7 +1429,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 value = value.decode(self.db._db_codec)
             except Exception:
                 pass
-        if isinstance(value, unicode):
+        if PY2 and isinstance(value, unicode):
             value = value.encode('utf-8')
         if isinstance(field_type, SQLCustomType):
             value = field_type.decoder(value)
@@ -1536,7 +1536,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         if not 'loads' in self.driver_auto_json:
             if not isinstance(value, basestring):
                 raise RuntimeError('json data not a string')
-            if isinstance(value, unicode):
+            if PY2 and isinstance(value, unicode):
                 value = value.encode('utf-8')
             if self.db.has_serializer('loads_json'):
                 value = self.db.serialize('loads_json', value)

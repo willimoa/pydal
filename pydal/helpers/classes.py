@@ -4,7 +4,7 @@ import marshal
 import struct
 import traceback
 
-from .._compat import exists, copyreg, integer_types
+from .._compat import PY2, exists, copyreg, integer_types
 
 
 long = integer_types[-1]
@@ -184,7 +184,10 @@ class MethodAdder(object):
         def _decorated(f):
             instance = self.table
             import types
-            method = types.MethodType(f, instance, instance.__class__)
+            if PY2:
+                method = types.MethodType(f, instance, instance.__class__)
+            else:
+                method = types.MethodType(f, instance)
             name = method_name or f.func_name
             setattr(instance, name, method)
             return f
