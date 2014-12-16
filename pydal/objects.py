@@ -11,7 +11,7 @@ import shutil
 import sys
 import types
 
-from ._compat import StringIO, ogetattr, osetattr, pjoin, exists, hashlib_md5
+from ._compat import PY2, StringIO, ogetattr, osetattr, pjoin, exists, hashlib_md5
 from ._globals import GLOBALS, DEFAULT, IDENTITY, AND, OR
 from ._load import json
 from ._gae import Key
@@ -1446,7 +1446,7 @@ class Field(Expression):
         self.op = None
         self.first = None
         self.second = None
-        if isinstance(fieldname, unicode):
+        if PY2 and isinstance(fieldname, unicode):
             try:
                 fieldname = str(fieldname)
             except UnicodeEncodeError:

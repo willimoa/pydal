@@ -3,6 +3,7 @@
     Basic unit tests
 """
 
+from __future__ import print_function
 import sys
 import os
 import glob
@@ -17,8 +18,8 @@ from ._compat import unittest
 #for travis-ci
 DEFAULT_URI = os.getenv('DB', 'sqlite:memory')
 
-print 'Testing against %s engine (%s)' % (DEFAULT_URI.partition(':')[0],
-                                          DEFAULT_URI)
+print('Testing against %s engine (%s)' % (DEFAULT_URI.partition(':')[0],
+                                          DEFAULT_URI))
 
 from pydal import DAL, Field
 from pydal.objects import Table
@@ -1489,7 +1490,7 @@ class TestQuoting(unittest.TestCase):
             t0 = db.define_table('table_is_a_test',
                                  Field('a_a'),
                                  Field('a_A'))
-        except Exception, e:
+        except Exception as e:
             # some db does not support case sensitive field names mysql is one of them.
             if DEFAULT_URI.startswith('mysql:') or DEFAULT_URI.startswith('sqlite:'):
                 db.rollback()
@@ -1524,7 +1525,7 @@ class TestQuoting(unittest.TestCase):
 
         try:
             t5 = db.define_table('t5', Field('f', length=100), Field('t0', 'reference no_table_wrong_reference'), primarykey=['f'])
-        except Exception, e:
+        except Exception as e:
             self.assertTrue(isinstance(e, KeyError))
 
         if DEFAULT_URI.startswith('mssql'):

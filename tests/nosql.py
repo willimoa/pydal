@@ -3,6 +3,7 @@
     Unit tests for NoSQL adapters
 """
 
+from __future__ import print_function
 import sys
 import os
 import glob
@@ -16,8 +17,8 @@ from ._compat import unittest
 
 #for travis-ci
 DEFAULT_URI = os.environ.get('DB', 'sqlite:memory')
-print 'Testing against %s engine (%s)' % (DEFAULT_URI.partition(':')[0],
-                                          DEFAULT_URI)
+print('Testing against %s engine (%s)' % (DEFAULT_URI.partition(':')[0],
+                                          DEFAULT_URI))
 
 IS_GAE = "datastore" in DEFAULT_URI
 IS_MONGODB = "mongodb" in DEFAULT_URI
@@ -1284,7 +1285,7 @@ class TestQuoting(unittest.TestCase):
             t1 = db.define_table('b',
                                  Field('B', t0),
                                  Field('words', 'text'))
-        except Exception, e:
+        except Exception as e:
             # An error is expected when database does not support case
             # sensitive entity names.
             if DEFAULT_URI.startswith('sqlite:'):
@@ -1309,7 +1310,7 @@ class TestQuoting(unittest.TestCase):
             t0 = db.define_table('table is a test',
                                  Field('a_a'),
                                  Field('a_A'))
-        except Exception, e:
+        except Exception as e:
             # some db does not support case sensitive field names mysql is one of them.
             if DEFAULT_URI.startswith('mysql:'):
                 db.rollback()
@@ -1344,7 +1345,7 @@ class TestQuoting(unittest.TestCase):
 
         try:
             t5 = db.define_table('t5', Field('f', length=100), Field('t0', 'reference no_table_wrong_reference'), primarykey=['f'])
-        except Exception, e:
+        except Exception as e:
             self.assertTrue(isinstance(e, KeyError))
 
         if DEFAULT_URI.startswith('mssql'):

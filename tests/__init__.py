@@ -4,8 +4,8 @@ NOSQL = any([name in (os.getenv("DB") or "")
             for name in ("datastore", "mongodb", "imap")])
 
 if NOSQL:
-    from nosql import *
+    from .nosql import *
 else:
-    from sql import *
+    from .sql import *
 
-from validation import TestValidateAndInsert
+from .validation import TestValidateAndInsert

@@ -199,7 +199,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 table._loggername = logfilename
             else:
                 table._loggername = pjoin(self.folder, logfilename)
-            logfile = self.file_open(table._loggername, 'a')
+            logfile = self.file_open(table._loggername, 'ab')
             logfile.write(message)
             self.file_close(logfile)
 
@@ -463,7 +463,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                     self.execute(query)
                     table._db.commit()
             if table._dbt:
-                tfile = self.file_open(table._dbt, 'w')
+                tfile = self.file_open(table._dbt, 'wb')
                 pickle.dump(sql_fields, tfile)
                 self.file_close(tfile)
                 if fake_migrate:
@@ -471,7 +471,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 else:
                     self.log('success!\n', table)
         else:
-            tfile = self.file_open(table._dbt, 'r')
+            tfile = self.file_open(table._dbt, 'rb')
             try:
                 sql_fields_old = pickle.load(tfile)
             except EOFError:
@@ -616,7 +616,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             self.log('success!\n', table)
 
     def save_dbt(self,table, sql_fields_current):
-        tfile = self.file_open(table._dbt, 'w')
+        tfile = self.file_open(table._dbt, 'wb')
         pickle.dump(sql_fields_current, tfile)
         self.file_close(tfile)
 
