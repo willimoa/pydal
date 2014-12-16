@@ -379,7 +379,7 @@ class TestBelongs(unittest.TestCase):
                          db.tt.aa))).count(),
                          2)
         else:
-            print "Datastore/Mongodb belongs does not accept queries (skipping)"
+            print("Datastore/Mongodb belongs does not accept queries (skipping)")
         drop(db.tt)
 
 
