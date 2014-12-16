@@ -80,7 +80,7 @@ else:
         except ImportError:
             try:
                 from .contrib import pypyodbc as pyodbc
-            except Exception, e:
+            except Exception as e:
                 raise ImportError(str(e))
         DRIVERS['pyodbc'] = pyodbc
         #DRIVERS.append('DB2(pyodbc)')

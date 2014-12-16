@@ -4,11 +4,14 @@ import re
 import sys
 
 from .._globals import IDENTITY, GLOBAL_LOCKER
+from .._compat import integer_types
 from ..connection import ConnectionPool
 from ..objects import Field, Query, Expression
 from ..helpers.classes import SQLALL
 from ..helpers.methods import use_common_filters
 from .base import NoSQLAdapter
+
+long = integer_types[-1]
 
 
 class IMAPAdapter(NoSQLAdapter):
@@ -345,7 +348,7 @@ class IMAPAdapter(NoSQLAdapter):
                 hms = map(int, date_list[3].split(":"))
                 return datetime.datetime(year, month, day,
                     hms[0], hms[1], hms[2]) + add
-            except (ValueError, AttributeError, IndexError), e:
+            except (ValueError, AttributeError, IndexError) as e:
                 self.db.logger.error("Could not parse date text: %s. %s" %
                              (date, e))
                 return None

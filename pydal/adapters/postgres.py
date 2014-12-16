@@ -289,10 +289,11 @@ class PostgreSQLAdapter(BaseAdapter):
         """
         return 'ST_Within(%s,%s)' %(self.expand(first), self.expand(second, first.type))
 
-    def ST_DWITHIN(self, first, (second, third)):
+    def ST_DWITHIN(self, first, tup):
         """
         http://postgis.org/docs/ST_DWithin.html
         """
+        second, third = tup
         return 'ST_DWithin(%s,%s,%s)' %(self.expand(first),
                                         self.expand(second, first.type),
                                         self.expand(third, 'double'))

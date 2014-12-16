@@ -2,12 +2,15 @@
 import datetime
 
 from .._globals import IDENTITY
+from .._compat import integer_types
 from .._load import json
 from ..drivers import couchdb
 from ..objects import Field, Query
 from ..helpers.classes import SQLALL
 from ..helpers.methods import uuid2int
 from .base import BaseAdapter, NoSQLAdapter, SELECT_ARGS
+
+long = integer_types[-1]
 
 
 class CouchDBAdapter(NoSQLAdapter):

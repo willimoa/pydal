@@ -4,7 +4,10 @@ import marshal
 import struct
 import traceback
 
-from .._compat import exists, copyreg
+from .._compat import exists, copyreg, integer_types
+
+
+long = integer_types[-1]
 
 
 class Reference(long):
@@ -269,7 +272,7 @@ class DatabaseStoredFile:
         try:
             if db.executesql(query):
                 return True
-        except Exception, e:
+        except Exception as e:
             if not (db._adapter.isOperationalError(e) or
                     db._adapter.isProgrammingError(e)):
                 raise
