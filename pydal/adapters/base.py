@@ -1411,7 +1411,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 except:
                     obj = obj.decode('latin1').encode(self.db_codec)
             else:
-                obj = bytes(obj, self.db.codec)
+                obj = bytes(obj, self.db_codec)
         return self.adapt(obj)
 
     def represent_exceptions(self, obj, fieldtype):
