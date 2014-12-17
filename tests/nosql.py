@@ -742,11 +742,11 @@ class TestImportExportFields(unittest.TestCase):
                 id = db.person.insert(name=str(k))
                 db.pet.insert(friend=id,name=str(k))
         db.commit()
-        stream = StringIO.StringIO()
+        stream = StringIO()
         db.export_to_csv_file(stream)
         db(db.pet).delete()
         db(db.person).delete()
-        stream = StringIO.StringIO(stream.getvalue())
+        stream = StringIO(stream.getvalue())
         db.import_from_csv_file(stream)
         assert db(db.person).count()==10
         assert db(db.pet.name).count()==10
@@ -768,11 +768,11 @@ class TestImportExportUuidFields(unittest.TestCase):
                 id = db.person.insert(name=str(k),uuid=str(k))
                 db.pet.insert(friend=id,name=str(k))
         db.commit()
-        stream = StringIO.StringIO()
+        stream = StringIO()
         db.export_to_csv_file(stream)
         db(db.person).delete()
         db(db.pet).delete()
-        stream = StringIO.StringIO(stream.getvalue())
+        stream = StringIO(stream.getvalue())
         db.import_from_csv_file(stream)
         assert db(db.person).count()==10
         assert db(db.pet).count()==10
