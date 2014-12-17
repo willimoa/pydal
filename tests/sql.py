@@ -17,9 +17,10 @@ DEFAULT_URI = os.getenv('DB', 'sqlite:memory')
 print('Testing against %s engine (%s)' % (DEFAULT_URI.partition(':')[0],
                                           DEFAULT_URI))
 
-from pydal._compat import PY2, basestring, StringIO
+from pydal._compat import PY2, basestring, StringIO, integer_types
 if PY2:
     StringIO = StringIO.StringIO
+long = integer_types[-1]
 
 from pydal import DAL, Field
 from pydal.objects import Table

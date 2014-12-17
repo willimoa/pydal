@@ -1414,8 +1414,11 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 except:
                     obj = obj.decode('latin1').encode(self.db_codec)
         else:
-            if not isinstance(obj, basestring):
-                obj = str(obj)
+            if fieldtype == 'blob':
+                obj = obj.decode('utf-8')
+            else:
+                if not isinstance(obj, basestring):
+                    obj = str(obj)
         return self.adapt(obj)
 
     def represent_exceptions(self, obj, fieldtype):
@@ -1473,7 +1476,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
 
     def parse_time(self, value, field_type):
         if not isinstance(value, datetime.time):
-            time_items = map(int,str(value)[:8].strip().split(':')[:3])
+            time_items = list(map(int,str(value)[:8].strip().split(':')[:3]))
             if len(time_items) == 3:
                 (h, mi, s) = time_items
             else:
@@ -1509,7 +1512,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         if PY2:
             return base64.b64decode(str(value))
         else:
-            return base64.b64decode(value)
+            return base64.b64decode(value).decode('utf-8')
 
     def parse_decimal(self, value, field_type):
         decimals = int(field_type[8:-1].split(',')[-1])
@@ -1770,7 +1773,7 @@ class NoSQLAdapter(BaseAdapter):
                     obj = datetime.date(y, m, d)
             elif fieldtype == 'time':
                 if not isinstance(obj, datetime.time):
-                    time_items = map(int,str(obj).strip().split(':')[:3])
+                    time_items = list(map(int,str(obj).strip().split(':')[:3]))
                     if len(time_items) == 3:
                         (h, mi, s) = time_items
                     else:
@@ -1779,7 +1782,7 @@ class NoSQLAdapter(BaseAdapter):
             elif fieldtype == 'datetime':
                 if not isinstance(obj, datetime.datetime):
                     (y, m, d) = map(int,str(obj)[:10].strip().split('-'))
-                    time_items = map(int,str(obj)[11:].strip().split(':')[:3])
+                    time_items = list(map(int,str(obj)[11:].strip().split(':')[:3]))
                     while len(time_items)<3:
                         time_items.append(0)
                     (h, mi, s) = time_items
