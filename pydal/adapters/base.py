@@ -11,7 +11,8 @@ import time
 import base64
 import types
 
-from .._compat import PY2, pjoin, exists, pickle, hashlib_md5, iterkeys, with_metaclass, to_unicode, integer_types, basestring
+from .._compat import PY2, pjoin, exists, pickle, hashlib_md5, iterkeys, \
+    iteritems, with_metaclass, to_unicode, integer_types, basestring
 from .._globals import IDENTITY
 from .._load import portalocker, json
 from .._gae import gae
@@ -510,9 +511,9 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             return k.lower(),v
         # make sure all field names are lower case to avoid
         # migrations because of case cahnge
-        sql_fields = dict(map(fix,sql_fields.iteritems()))
-        sql_fields_old = dict(map(fix,sql_fields_old.iteritems()))
-        sql_fields_aux = dict(map(fix,sql_fields_aux.iteritems()))
+        sql_fields = dict(map(fix, iteritems(sql_fields)))
+        sql_fields_old = dict(map(fix, iteritems(sql_fields_old)))
+        sql_fields_aux = dict(map(fix, iteritems(sql_fields_aux)))
         if db._debug:
             logging.debug('migrating %s to %s' % (sql_fields_old,sql_fields))
 
