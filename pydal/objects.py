@@ -11,7 +11,7 @@ import shutil
 import sys
 import types
 
-from ._compat import PY2, StringIO, ogetattr, osetattr, pjoin, exists, hashlib_md5
+from ._compat import PY2, StringIO, ogetattr, osetattr, pjoin, exists, hashlib_md5, integer_types, basestring, iteritems
 from ._globals import GLOBALS, DEFAULT, IDENTITY, AND, OR
 from ._load import json
 from ._gae import Key
@@ -23,6 +23,8 @@ from .helpers.classes import Reference, MethodAdder, SQLCallableList, SQLALL
 from .helpers.methods import list_represent, bar_decode_integer, \
     bar_decode_string, bar_encode, archive_record, cleanup, \
     use_common_filters, pluralize
+
+long = integer_types[-1]
 
 DEFAULTLENGTH = {'string':512,
                  'password':512,
@@ -112,7 +114,7 @@ class Row(object):
 
     __iter__ = lambda self: self.__dict__.__iter__()
 
-    iteritems = lambda self: self.__dict__.iteritems()
+    iteritems = lambda self: iteritems(self.__dict__)
 
     __str__ = __repr__ = lambda self: '<Row %s>' % self.as_dict()
 
@@ -435,7 +437,7 @@ class Table(object):
 
     def _validate(self, **vars):
         errors = Row()
-        for key, value in vars.iteritems():
+        for key, value in iteritems(vars):
             value, error = self[key].validate(value)
             if error:
                 errors[key] = error
@@ -490,7 +492,7 @@ class Table(object):
     def _build_query(self,key):
         """ for keyed table only """
         query = None
-        for k,v in key.iteritems():
+        for k,v in iteritems(key):
             if k in self._primarykey:
                 if query:
                     query = query & (self[k] == v)
@@ -546,11 +548,11 @@ class Table(object):
                 record = self._db(self._id == key).select(
                     limitby=(0,1),for_update=for_update, orderby=orderby, orderby_on_limitby=False).first()
             if record:
-                for k,v in kwargs.iteritems():
+                for k,v in iteritems(kwargs):
                     if record[k]!=v: return None
             return record
         elif kwargs:
-            query = reduce(lambda a,b:a&b,[self[k]==v for k,v in kwargs.iteritems()])
+            query = reduce(lambda a,b:a&b,[self[k]==v for k,v in iteritems(kwargs)])
             return self._db(query).select(limitby=(0,1),for_update=for_update, orderby=orderby, orderby_on_limitby=False).first()
         else:
             return None
@@ -611,7 +613,7 @@ class Table(object):
             yield self[fieldname]
 
     def iteritems(self):
-        return self.__dict__.iteritems()
+        return iteritems(self.__dict__)
 
     def __repr__(self):
         return '<Table %s (%s)>' % (self._tablename, ','.join(self.fields()))
@@ -743,7 +745,7 @@ class Table(object):
         response = Row()
         response.errors = Row()
         new_fields = copy.copy(fields)
-        for key,value in fields.iteritems():
+        for key,value in iteritems(fields):
             value,error = self[key].validate(value)
             if error:
                 response.errors[key] = "%s" % error
@@ -760,7 +762,7 @@ class Table(object):
         response.errors = Row()
         new_fields = copy.copy(fields)
 
-        for key, value in fields.iteritems():
+        for key, value in iteritems(fields):
             value, error = self[key].validate(value)
             if error:
                 response.errors[key] = "%s" % error
@@ -779,7 +781,7 @@ class Table(object):
                 myset = self._db(self._id == record[self._id.name])
             else:
                 query = None
-                for key, value in _key.iteritems():
+                for key, value in iteritems(_key):
                     if query is None:
                         query = getattr(self, key) == value
                     else:
@@ -807,7 +809,7 @@ class Table(object):
     def validate_and_update_or_insert(self, _key=DEFAULT, **fields):
         if _key is DEFAULT or _key == '':
             primary_keys = {}
-            for key, value in fields.iteritems():
+            for key, value in iteritems(fields):
                 if key in self._primarykey:
                     primary_keys[key] = value
             if primary_keys != {}:
@@ -815,7 +817,7 @@ class Table(object):
                 _key = primary_keys
             else:
                 required_keys = {}
-                for key, value in fields.iteritems():
+                for key, value in iteritems(fields):
                     if getattr(self, key).required:
                         required_keys[key] = value
                 record = self(**required_keys)
@@ -2109,7 +2111,7 @@ class Set(object):
         response = Row()
         response.errors = Row()
         new_fields = copy.copy(update_fields)
-        for key,value in update_fields.iteritems():
+        for key,value in iteritems(update_fields):
             value,error = self.db[tablename][key].validate(value)
             if error:
                 response.errors[key] = '%s' % error
@@ -2280,7 +2282,7 @@ class Rows(object):
         if not keyed_virtualfields:
             return self
         for row in self.records:
-            for (tablename,virtualfields) in keyed_virtualfields.iteritems():
+            for (tablename,virtualfields) in iteritems(keyed_virtualfields):
                 attributes = dir(virtualfields)
                 if not tablename in row:
                     box = row[tablename] = Row()

@@ -11,7 +11,7 @@ import time
 import base64
 import types
 
-from .._compat import PY2, pjoin, exists, pickle, hashlib_md5, iterkeys, with_metaclass
+from .._compat import PY2, pjoin, exists, pickle, hashlib_md5, iterkeys, with_metaclass, to_unicode, integer_types, basestring
 from .._globals import IDENTITY
 from .._load import portalocker, json
 from .._gae import gae
@@ -23,6 +23,7 @@ from ..helpers.methods import xorify, use_common_filters, bar_encode, \
     bar_decode_integer, bar_decode_string
 from ..helpers.classes import SQLCustomType, SQLALL, Reference, RecordUpdater, RecordDeleter
 
+long = integer_types[-1]
 
 TIMINGSSIZE = 100
 CALLABLETYPES = (types.LambdaType, types.FunctionType,
@@ -1402,7 +1403,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                     obj = self.db.serialize('json', obj)
                 else:
                     obj = json.dumps(obj)
-        if not isinstance(obj, bytes):
+        if PY2 and not isinstance(obj, bytes):
             obj = bytes(obj)
         try:
             obj.decode(self.db_codec)
@@ -1710,14 +1711,6 @@ class NoSQLAdapter(BaseAdapter):
     can_select_for_update = False
     QUOTE_TEMPLATE = '%s'
 
-    @staticmethod
-    def to_unicode(obj):
-        if isinstance(obj, str):
-            return obj.decode('utf8')
-        elif not isinstance(obj, unicode):
-            return unicode(obj)
-        return obj
-
     def id_query(self, table):
         return table._id > 0
 
@@ -1785,17 +1778,17 @@ class NoSQLAdapter(BaseAdapter):
                 pass
             elif fieldtype == 'json':
                 if isinstance(obj, basestring):
-                    obj = self.to_unicode(obj)
+                    obj = to_unicode(obj)
                     if self.db.has_serializer('loads_json'):
                         obj = self.db.serialize('loads_json', obj)
                     else:
                         obj = json.loads(obj)
             elif is_string and field_is_type('list:string'):
-                return map(self.to_unicode,obj)
+                return map(to_unicode,obj)
             elif is_list:
                 return map(int,obj)
             else:
-                obj = self.to_unicode(obj)
+                obj = to_unicode(obj)
         return obj
 
     def _insert(self,table,fields):

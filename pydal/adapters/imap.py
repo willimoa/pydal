@@ -4,7 +4,7 @@ import re
 import sys
 
 from .._globals import IDENTITY, GLOBAL_LOCKER
-from .._compat import integer_types
+from .._compat import integer_types, basestring
 from ..connection import ConnectionPool
 from ..objects import Field, Query, Expression
 from ..helpers.classes import SQLALL

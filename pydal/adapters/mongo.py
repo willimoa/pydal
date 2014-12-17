@@ -4,7 +4,7 @@ import logging
 import re
 
 from .._globals import IDENTITY
-from .._compat import integer_types
+from .._compat import integer_types, basestring
 from ..objects import Table, Query, Field, Expression
 from ..helpers.classes import SQLALL
 from ..helpers.methods import xorify

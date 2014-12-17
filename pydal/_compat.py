@@ -13,6 +13,14 @@ if PY2:
     itervalues = lambda d: d.itervalues()
     iteritems = lambda d: d.iteritems()
     integer_types = (int, long)
+    basestring = basestring
+
+    def to_unicode(obj):
+        if isinstance(obj, str):
+            return obj.decode('utf8')
+        if not isinstance(obj, unicode):
+            return unicode(obj)
+        return obj
 else:
     import pickle
     from io import StringIO
@@ -22,6 +30,14 @@ else:
     itervalues = lambda d: iter(d.values())
     iteritems = lambda d: iter(d.items())
     integer_types = (int,)
+    basestring = str
+
+    def to_unicode(obj):
+        if isinstance(obj, bytes):
+            return obj.decode('utf8')
+        if not isinstance(obj, str):
+            return str(obj)
+        return obj
 
 
 def with_metaclass(meta, *bases):

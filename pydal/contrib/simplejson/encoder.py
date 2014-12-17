@@ -1,5 +1,7 @@
 """Implementation of JSONEncoder
 """
+from ..._compat import basestring
+
 import re
 from decimal import Decimal
 
