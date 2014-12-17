@@ -4,7 +4,7 @@ import re
 import sys
 
 from .._globals import IDENTITY, GLOBAL_LOCKER
-from .._compat import integer_types, basestring
+from .._compat import PY2, integer_types, basestring
 from ..connection import ConnectionPool
 from ..objects import Field, Query, Expression
 from ..helpers.classes import SQLALL
@@ -563,7 +563,11 @@ class IMAPAdapter(NoSQLAdapter):
                                       "raw_message": data[0][1]}
                                 fr["multipart"] = fr["email"].is_multipart()
                                 # fetch flags for the message
-                                fr["flags"] = self.driver.ParseFlags(data[1])
+                                if PY2:
+                                    fr["flags"] = self.driver.ParseFlags(data[1])
+                                else:
+                                    fr["flags"] = self.driver.ParseFlags(
+                                        bytes(data[1], "utf-8"))
                                 fetch_results.append(fr)
                             else:
                                 # error retrieving the message body
