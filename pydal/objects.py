@@ -104,6 +104,8 @@ class Row(object):
 
     __nonzero__ = lambda self: len(self.__dict__)>0
 
+    __bool__ = lambda self: len(self.__dict__)>0
+
     update = lambda self, *args, **kwargs:  self.__dict__.update(*args, **kwargs)
 
     keys = lambda self: self.__dict__.keys()
@@ -649,7 +651,7 @@ class Table(object):
     def drop(self, mode=''):
         return self._db._adapter.drop(self,mode)
 
-    def _listify(self,fields,update=False):
+    def _listify(self, fields, update=False):
         new_fields = {}  # format: new_fields[name] = (field,value)
 
         # store all fields passed as input in new_fields
@@ -699,7 +701,7 @@ class Table(object):
                     # error silently unless field is required!
                     if ofield.required:
                         raise SyntaxError('unable to compute field: %s' % name)
-        return new_fields.values()
+        return list(new_fields.values())
 
     def _attempt_upload(self, fields):
         for field in self:
@@ -736,19 +738,20 @@ class Table(object):
     def insert(self, **fields):
         fields = self._defaults(fields)
         self._attempt_upload(fields)
-        if any(f(fields) for f in self._before_insert): return 0
-        ret =  self._db._adapter.insert(self, self._listify(fields))
+        if any(f(fields) for f in self._before_insert):
+            return 0
+        ret = self._db._adapter.insert(self, self._listify(fields))
         if ret and self._after_insert:
             fields = Row(fields)
-            [f(fields,ret) for f in self._after_insert]
+            [f(fields, ret) for f in self._after_insert]
         return ret
 
     def validate_and_insert(self, **fields):
         response = Row()
         response.errors = Row()
         new_fields = copy.copy(fields)
-        for key,value in iteritems(fields):
-            value,error = self[key].validate(value)
+        for key, value in iteritems(fields):
+            value, error = self[key].validate(value)
             if error:
                 response.errors[key] = "%s" % error
             else:
@@ -1147,7 +1150,8 @@ class Expression(object):
             else:
                 pos0 = start + 1
 
-            if stop == None or stop == sys.maxint:
+            maxint = sys.maxint if PY2 else sys.maxsize
+            if stop == None or stop == maxint:
                 length = self.len()
             elif stop < 0:
                 length = '(%s - %d - %s)' % (self.len(), abs(stop) - 1, pos0)
@@ -1195,6 +1199,9 @@ class Expression(object):
     def __div__(self, other):
         db = self.db
         return Expression(db,db._adapter.DIV,self,other,self.type)
+
+    def __truediv__(self, other):
+        return self.__div__(other)
 
     def __mod__(self, other):
         db = self.db
@@ -1848,7 +1855,7 @@ class Query(object):
                     elif isinstance(v, (datetime.date,
                                         datetime.time,
                                         datetime.datetime)):
-                        newd[k] = unicode(v)
+                        newd[k] = unicode(v) if PY2 else str(v)
                 elif k == "op":
                     if callable(v):
                         newd[k] = v.__name__
@@ -2644,7 +2651,7 @@ class Rows(object):
             """
             if value is None:
                 return null
-            elif isinstance(value, unicode):
+            elif PY2 and isinstance(value, unicode):
                 return value.encode('utf8')
             elif isinstance(value,Reference):
                 return long(value)

@@ -145,7 +145,7 @@ import glob
 import logging
 from uuid import uuid4
 
-from ._compat import pickle, hashlib_md5, pjoin, ogetattr, osetattr, copyreg
+from ._compat import pickle, hashlib_md5, pjoin, ogetattr, osetattr, copyreg, integer_types
 from ._globals import GLOBAL_LOCKER, THREAD_LOCAL, DEFAULT, GLOBALS
 from ._load import OrderedDict
 from .helpers.classes import SQLCallableList
@@ -154,6 +154,8 @@ from .helpers.regex import REGEX_PYTHON_KEYWORDS, REGEX_DBNAME, REGEX_SEARCH_PAT
 from .objects import Table, Field, Row, Set
 from .adapters import ADAPTERS
 from .adapters.base import BaseAdapter
+
+long = integer_types[-1]
 
 
 TABLE_ARGS = set(
