@@ -21,6 +21,7 @@ DEFAULT_URI = os.getenv('DB', 'sqlite:memory')
 print('Testing against %s engine (%s)' % (DEFAULT_URI.partition(':')[0],
                                           DEFAULT_URI))
 
+from pydal._compat import basestring
 from pydal import DAL, Field
 from pydal.objects import Table
 from pydal.helpers.classes import SQLALL

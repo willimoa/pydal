@@ -1403,12 +1403,15 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                     obj = self.db.serialize('json', obj)
                 else:
                     obj = json.dumps(obj)
-        if PY2 and not isinstance(obj, bytes):
-            obj = bytes(obj)
-        try:
-            obj.decode(self.db_codec)
-        except:
-            obj = obj.decode('latin1').encode(self.db_codec)
+        if not isinstance(obj, bytes):
+            if PY2:
+                obj = bytes(obj)
+                try:
+                    obj.decode(self.db_codec)
+                except:
+                    obj = obj.decode('latin1').encode(self.db_codec)
+            else:
+                obj = bytes(obj, self.db.codec)
         return self.adapt(obj)
 
     def represent_exceptions(self, obj, fieldtype):
