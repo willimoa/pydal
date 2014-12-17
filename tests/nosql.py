@@ -8,11 +8,12 @@ import sys
 import os
 import glob
 import datetime
-try:
-    import cStringIO as StringIO
-except:
-    from io import StringIO
 from ._compat import unittest
+
+from pydal._compat import PY2, basestring, StringIO, integer_types
+if PY2:
+    StringIO = StringIO.StringIO
+long = integer_types[-1]
 
 
 #for travis-ci

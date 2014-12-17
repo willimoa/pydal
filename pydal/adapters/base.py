@@ -1414,11 +1414,10 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 except:
                     obj = obj.decode('latin1').encode(self.db_codec)
         else:
-            if fieldtype == 'blob':
+            if isinstance(obj, bytes):
                 obj = obj.decode('utf-8')
-            else:
-                if not isinstance(obj, basestring):
-                    obj = str(obj)
+            if not isinstance(obj, basestring):
+                obj = str(obj)
         return self.adapt(obj)
 
     def represent_exceptions(self, obj, fieldtype):
