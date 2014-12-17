@@ -516,7 +516,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         if db._debug:
             logging.debug('migrating %s to %s' % (sql_fields_old,sql_fields))
 
-        keys = sql_fields.keys()
+        keys = list(sql_fields.keys())
         for key in sql_fields_old:
             if not key in keys:
                 keys.append(key)
@@ -1052,7 +1052,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             raise SyntaxError('Set: no tables selected')
         def colexpand(field):
             return self.expand(field, colnames=True)
-        self._colnames = map(colexpand, fields)
+        self._colnames = list(map(colexpand, fields))
         def geoexpand(field):
             if isinstance(field.type,str) and field.type.startswith('geo') and isinstance(field, Field):
                 field = field.st_astext()
@@ -1088,7 +1088,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             ijoinont = [t.first._tablename for t in ijoinon]
             [itables_to_merge.pop(t) for t in ijoinont
              if t in itables_to_merge] #issue 490
-            iimportant_tablenames = ijoint + ijoinont + itables_to_merge.keys()
+            iimportant_tablenames = ijoint + ijoinont + list(itables_to_merge.keys())
             iexcluded = [t for t in tablenames
                          if not t in iimportant_tablenames]
         if left:
@@ -1107,7 +1107,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             [tables_to_merge.pop(t) for t in joinont if t in tables_to_merge]
             tablenames_for_common_filters = [t for t in tablenames
                         if not t in joinont ]
-            important_tablenames = joint + joinont + tables_to_merge.keys()
+            important_tablenames = joint + joinont + list(tables_to_merge.keys())
             excluded = [t for t in tablenames
                         if not t in important_tablenames ]
         else:
@@ -1126,12 +1126,12 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             # sql_t = '(%s)' % sql_t
             # or approach 2: Use 'JOIN' instead comma:
             sql_t = JOIN.join([self.table_alias(t)
-                               for t in iexcluded + itables_to_merge.keys()])
+                               for t in iexcluded + list(itables_to_merge.keys())])
             for t in ijoinon:
                 sql_t += ' %s %s' % (icommand, t)
         elif not inner_join and left:
             sql_t = JOIN.join([self.table_alias(t) for t in excluded + \
-                                   tables_to_merge.keys()])
+                                   list(tables_to_merge.keys())])
             if joint:
                 sql_t += ' %s %s' % (command,
                                      ','.join([t for t in joint]))
@@ -1336,9 +1336,9 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             elif not isinstance(obj, (list, tuple)):
                 obj = [obj]
             if field_is_type('list:string'):
-                obj = map(str,obj)
+                obj = list(map(str,obj))
             else:
-                obj = map(int,[o for o in obj if o != ''])
+                obj = list(map(int,[o for o in obj if o != '']))
         # we don't want to bar_encode json objects
         if isinstance(obj, (list, tuple)) and (not fieldtype == "json"):
             obj = bar_encode(obj)
@@ -1378,7 +1378,10 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         if PY2 and isinstance(obj, unicode):
             obj = obj.encode(self.db_codec)
         if fieldtype == 'blob':
-            obj = base64.b64encode(str(obj))
+            if PY2:
+                obj = base64.b64encode(str(obj))
+            else:
+                obj = base64.b64encode(obj.encode('utf-8'))
         elif fieldtype == 'date':
             if isinstance(obj, (datetime.date, datetime.datetime)):
                 obj = obj.isoformat()[:10]
@@ -1403,15 +1406,16 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                     obj = self.db.serialize('json', obj)
                 else:
                     obj = json.dumps(obj)
-        if not isinstance(obj, bytes):
-            if PY2:
+        if PY2:
+            if not isinstance(obj, bytes):
                 obj = bytes(obj)
                 try:
                     obj.decode(self.db_codec)
                 except:
                     obj = obj.decode('latin1').encode(self.db_codec)
-            else:
-                obj = bytes(obj, self.db_codec)
+        else:
+            if not isinstance(obj, basestring):
+                obj = str(obj)
         return self.adapt(obj)
 
     def represent_exceptions(self, obj, fieldtype):
@@ -1502,7 +1506,10 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         return value
 
     def parse_blob(self, value, field_type):
-        return base64.b64decode(str(value))
+        if PY2:
+            return base64.b64decode(str(value))
+        else:
+            return base64.b64decode(value)
 
     def parse_decimal(self, value, field_type):
         decimals = int(field_type[8:-1].split(',')[-1])
@@ -1787,9 +1794,9 @@ class NoSQLAdapter(BaseAdapter):
                     else:
                         obj = json.loads(obj)
             elif is_string and field_is_type('list:string'):
-                return map(to_unicode,obj)
+                return list(map(to_unicode,obj))
             elif is_list:
-                return map(int,obj)
+                return list(map(int,obj))
             else:
                 obj = to_unicode(obj)
         return obj

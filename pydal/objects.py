@@ -11,7 +11,7 @@ import shutil
 import sys
 import types
 
-from ._compat import PY2, StringIO, ogetattr, osetattr, pjoin, exists, hashlib_md5, integer_types, basestring, iteritems
+from ._compat import PY2, StringIO, ogetattr, osetattr, pjoin, exists, hashlib_md5, integer_types, basestring, iteritems, xrange
 from ._globals import GLOBALS, DEFAULT, IDENTITY, AND, OR
 from ._load import json
 from ._gae import Key
@@ -146,13 +146,15 @@ class Row(object):
         return Row(dict(self))
 
     def as_dict(self, datetime_to_str=False, custom_types=None):
-        SERIALIZABLE_TYPES = [str, unicode, int, long, float, bool, list, dict]
+        SERIALIZABLE_TYPES = [str, int, float, bool, list, dict]
+        if PY2:
+            SERIALIZABLE_TYPES += [unicode, long]
         if isinstance(custom_types,(list,tuple,set)):
             SERIALIZABLE_TYPES += custom_types
         elif custom_types:
             SERIALIZABLE_TYPES.append(custom_types)
         d = dict(self)
-        for k in copy.copy(d.keys()):
+        for k in list(d.keys()):
             v=d[k]
             if d[k] is None:
                 continue
@@ -486,7 +488,7 @@ class Table(object):
                 self._referenced_by.append(referee)
 
     def _filter_fields(self, record, id=False):
-        return dict([(k, v) for (k, v) in record.iteritems() if k
+        return dict([(k, v) for (k, v) in iteritems(record) if k
                      in self.fields and (self[k].type!='id' or id)])
 
     def _build_query(self,key):
@@ -2330,9 +2332,9 @@ class Rows(object):
 
     def __getitem__(self, i):
         row = self.records[i]
-        keys = row.keys()
+        keys = list(row.keys())
         if self.compact and len(keys) == 1 and keys[0] != '_extra':
-            return row[row.keys()[0]]
+            return row[keys[0]]
         return row
 
     def __iter__(self):

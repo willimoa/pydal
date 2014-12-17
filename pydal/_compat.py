@@ -14,6 +14,7 @@ if PY2:
     iteritems = lambda d: d.iteritems()
     integer_types = (int, long)
     basestring = basestring
+    xrange = xrange
 
     def to_unicode(obj):
         if isinstance(obj, str):
@@ -31,6 +32,7 @@ else:
     iteritems = lambda d: iter(d.items())
     integer_types = (int,)
     basestring = str
+    xrange = range
 
     def to_unicode(obj):
         if isinstance(obj, bytes):

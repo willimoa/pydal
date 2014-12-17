@@ -1,7 +1,10 @@
 import re
 import os
 from ._compat import unittest
+from pydal._compat import integer_types
 from pydal import DAL, Field
+
+long = integer_types[-1]
 
 DEFAULT_URI = os.getenv('DB', 'sqlite:memory')
 NOSQL = any([name in DEFAULT_URI for name in ("datastore", "mongodb", "imap")])

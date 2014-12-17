@@ -918,7 +918,7 @@ class TestSelectAsDict(unittest.TestCase):
         self.assertEqual(rtn[0]['b_field'], 'bb1')
         rtn = db.executesql("SELECT id, b_field, a_field FROM a_table", as_ordered_dict=True)
         self.assertEqual(rtn[0]['b_field'], 'bb1')
-        self.assertEqual(rtn[0].keys(), ['id', 'b_field', 'a_field'])
+        self.assertEqual(list(rtn[0].keys()), ['id', 'b_field', 'a_field'])
         db.a_table.drop()
 
 

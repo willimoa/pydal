@@ -159,7 +159,7 @@ class RecordUpdater(object):
         colset, db, tablename, id = self.colset, self.db, self.tablename, self.id
         table = db[tablename]
         newfields = fields or dict(colset)
-        for fieldname in newfields.keys():
+        for fieldname in list(newfields.keys()):
             if not fieldname in table.fields or table[fieldname].type=='id':
                 del newfields[fieldname]
         table._db(table._id==id,ignore_common_filters=True).update(**newfields)
