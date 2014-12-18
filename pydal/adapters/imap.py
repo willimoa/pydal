@@ -371,7 +371,7 @@ class IMAPAdapter(NoSQLAdapter):
         """ convert text for mail to unicode"""
         if text is None:
             text = ""
-        else:
+        if PY2:
             if isinstance(text, str):
                 if charset is None:
                     text = unicode(text, "utf-8", errors)
@@ -379,7 +379,11 @@ class IMAPAdapter(NoSQLAdapter):
                     text = unicode(text, charset, errors)
             else:
                 raise Exception("Unsupported mail text type %s" % type(text))
-        return text.encode("utf-8")
+            return text.encode("utf-8")
+        else:
+            if isinstance(text, bytes):
+                return text.decode("utf-8")
+            return text
 
     def get_charset(self, message):
         charset = message.get_content_charset()
