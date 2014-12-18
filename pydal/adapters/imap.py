@@ -345,7 +345,7 @@ class IMAPAdapter(NoSQLAdapter):
                 year = int(date_list[2])
                 month = months.index(date_list[1].upper())
                 day = int(date_list[0])
-                hms = map(int, date_list[3].split(":"))
+                hms = list(map(int, date_list[3].split(":")))
                 return datetime.datetime(year, month, day,
                     hms[0], hms[1], hms[2]) + add
             except (ValueError, AttributeError, IndexError) as e:
