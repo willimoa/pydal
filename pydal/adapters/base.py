@@ -439,8 +439,8 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 or self.uri.startswith('spatialite:///'):
             path_encoding = sys.getfilesystemencoding() \
                 or locale.getdefaultlocale()[1] or 'utf8'
-            dbpath = self.uri[9:self.uri.rfind('/')]\
-                .decode('utf8').encode(path_encoding)
+            dbpath = to_unicode(
+                self.uri[9:self.uri.rfind('/')]).encode(path_encoding)
         else:
             dbpath = self.folder
 
