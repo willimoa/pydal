@@ -6,17 +6,6 @@
 | License: LGPLv3 (http://www.gnu.org/licenses/lgpl.html)
 |
 
-Thanks to
-
-  - Niall Sweeny <niall.sweeny@fonjax.com> for MS SQL support
-  - Marcel Leuthi <mluethi@mlsystems.ch> for Oracle support
-  - Denes
-  - Chris Clark
-  - clach05
-  - Denes Lengyel
-
-and many others who have contributed to current and previous versions
-
 This file contains the DAL support for many relational databases, including:
 
   - SQLite & SpatiaLite
@@ -121,8 +110,7 @@ Supported DAL URI strings::
     'informix://user:password@server:3050/database'
     'informixu://user:password@server:3050/database' # unicode informix
     'ingres://database'  # or use an ODBC connection string, e.g. 'ingres://dsn=dsn_name'
-    'google:datastore' # for google app engine datastore
-    'google:datastore+ndb' # for google app engine datastore + ndb
+    'google:datastore' # for google app engine datastore (uses ndb by default)
     'google:sql' # for google app engine with sql (mysql compatible)
     'teradata://DSN=dsn;UID=user;PWD=pass; DATABASE=database' # experimental
     'imap://user:password@server:port' # experimental
@@ -149,7 +137,7 @@ from ._compat import pickle, hashlib_md5, pjoin, ogetattr, osetattr, copyreg, in
 from ._globals import GLOBAL_LOCKER, THREAD_LOCAL, DEFAULT, GLOBALS
 from ._load import OrderedDict
 from .helpers.classes import SQLCallableList
-from .helpers.methods import hide_password, smart_query, sqlhtml_validators
+from .helpers.methods import hide_password, smart_query, auto_validators
 from .helpers.regex import REGEX_PYTHON_KEYWORDS, REGEX_DBNAME, REGEX_SEARCH_PATTERN, REGEX_SQUARE_BRACKETS
 from .objects import Table, Field, Row, Set
 from .adapters import ADAPTERS
@@ -168,7 +156,8 @@ class MetaDAL(type):
     def __call__(cls, *args, **kwargs):
         #: intercept arguments for DAL costumisation on call
         intercepts = [
-            'logger', 'representers', 'serializers', 'uuid', 'validators']
+            'logger', 'representers', 'serializers', 'uuid', 'validators',
+            'validators_method']
         intercepted = []
         for name in intercepts:
             val = kwargs.get(name)
@@ -261,8 +250,9 @@ class DAL(object):
 
     serializers = None
     validators = None
+    validators_method = None
     representers = {}
-    uuid = lambda: str(uuid4())
+    uuid = lambda x: str(uuid4())
     logger = logging.getLogger("pyDAL")
 
     Table = Table
@@ -804,7 +794,9 @@ class DAL(object):
             else:
                 raise SyntaxError("missing table name")
         elif hasattr(self,tablename) or tablename in self.tables:
-            if not args.get('redefine',False):
+            if args.get('redefine',False):
+                delattr(self, tablename)
+            else:
                 raise SyntaxError('table already defined: %s' % tablename)
         elif tablename.startswith('_') or hasattr(self,tablename) or \
                 REGEX_PYTHON_KEYWORDS.match(tablename):
@@ -816,7 +808,7 @@ class DAL(object):
             if invalid_args:
                 raise SyntaxError('invalid table "%s" attributes: %s' \
                     % (tablename,invalid_args))
-        if self._lazy_tables and not tablename in self._LAZY_TABLES:
+        if self._lazy_tables and tablename not in self._LAZY_TABLES:
             self._LAZY_TABLES[tablename] = (tablename,fields,args)
             table = None
         else:
@@ -844,7 +836,7 @@ class DAL(object):
         table._create_references()
         for field in table:
             if field.requires == DEFAULT:
-                field.requires = sqlhtml_validators(field)
+                field.requires = auto_validators(field)
 
         migrate = self._migrate_enabled and args_get('migrate',self._migrate)
         if migrate and not self._uri in (None,'None') \

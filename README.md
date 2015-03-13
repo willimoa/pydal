@@ -1,30 +1,69 @@
-# Database Abstraction Layer
+# pyDAL
 
-This is the web2py's Database Abstraction Layer. It does not require web2py and can be used with any Python program. It is documented here:
+pyDAL is a pure Python Database Abstraction Layer.
 
-http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer
+It dynamically generates the SQL in real time using the specified dialect for the database back end, so that you do not have to write SQL code or learn different SQL dialects (the term SQL is used generically), and your code will be portable among different types of databases.
 
-## Quick example
+pyDAL comes from the original web2py's DAL, with the aim of being wide-compatible. pyDAL doesn't require web2py and can be used in any Python context.
 
-    >>> from dal import DAL, Field
+[![pip version](https://img.shields.io/pypi/v/pydal.svg?style=flat-square)](https://pypi.python.org/pypi/pydal) 
+[![Build Status](https://img.shields.io/travis/web2py/pydal.svg?style=flat-square)](https://travis-ci.org/web2py/pydal)
+[![Coverage Status](https://img.shields.io/coveralls/web2py/pydal.svg?style=flat-square)](https://coveralls.io/r/web2py/pydal)
+[![API Docs Status](https://readthedocs.org/projects/pydal/badge/?version=latest&style=flat-square)](http://pydal.rtfd.org/)
+
+## Installation
+
+You can install pyDAL using pip:
+
+    pip install pyDAL
+
+## Usage and documentation
+
+Here is a quick example:
+
+    >>> from pydal import DAL, Field
     >>> db = DAL('sqlite://storage.db')
     >>> db.define_table('thing',Field('name'))
-    >>> db.thing.insert(name="Chair')
+    >>> db.thing.insert(name='Chair')
     >>> query = db.thing.name.startswith('C')
     >>> rows = db(query).select()
     >>> print rows[0].name
     Chair
+    >>> db.commit()
 
-## Supported Databases
+The complete documentation is available on http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer
 
-sqlite, postgresql, mysql, mssql, db2, firebird, sybase, oracle, informix, teradata, sapdb, ingres, cubrid, imap, mongodb
+## What's in the box?
 
-## Features
+A little *taste* of pyDAL features:
 
-Transactions, Aggregates, Inner Joins, Outer Joins, Nested Selects
+* Transactions
+* Aggregates
+* Inner Joins
+* Outer Joins
+* Nested Selects
+
+## Which databases are supported?
+
+pyDAL actually support these databases:
+
+* sqlite
+* postgresql
+* mysql
+* mssql
+* db2
+* firebird
+* sybase
+* oracle
+* informix
+* teradata
+* sapdb
+* ingres
+* cubrid
+* imap
+* mongodb
 
 ## License
 
-BSD v3
-
-
+pyDAL is released under the BSDv3 License.   
+For further details, please check the `LICENSE` file.

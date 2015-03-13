@@ -5,10 +5,12 @@ import re
 from .._compat import pjoin
 from .._globals import IDENTITY, THREAD_LOCAL
 from .._load import json
-from .._gae import classobj, gae, ndb, NDBDecimalProperty, GAEDecimalProperty, \
-    namespace_manager, Key, NDBPolyModel, PolyModel, rdbms
+from .._gae import classobj, gae, ndb, NDBDecimalProperty, \
+    GAEDecimalProperty, namespace_manager, Key, \
+    NDBPolyModel, PolyModel, rdbms
 from ..objects import Table, Field, Expression, Query
-from ..helpers.classes import SQLCustomType, SQLALL, Reference, UseDatabaseStoredFile
+from ..helpers.classes import SQLCustomType, SQLALL, \
+    Reference, UseDatabaseStoredFile
 from ..helpers.methods import use_common_filters, xorify
 from .base import NoSQLAdapter
 from .mysql import MySQLAdapter
@@ -65,27 +67,21 @@ class GoogleSQLAdapter(UseDatabaseStoredFile, MySQLAdapter):
         self.adapter_args = adapter_args
         self.driver = "google"
 
-
-class GAEF(object):
-    def __init__(self,name,op,value,apply):
-        self.name=name=='id' and '__key__' or name
-        self.op=op
-        self.value=value
-        self.apply=apply
-    def __repr__(self):
-        return '(%s %s %s:%s)' % (self.name, self.op, repr(self.value), type(self.value))
-
-
 class GoogleDatastoreAdapter(NoSQLAdapter):
     """
-    NDB:
+    This now always uses NDB since there is no reason to use DB:
 
-    You can enable NDB by using adapter_args::
+    You can enable NDB as follows:
 
-        db = DAL('google:datastore', adapter_args={'ndb_settings':ndb_settings, 'use_ndb':True})
+        db = DAL('google:datastore')
+
+    You can also pass optional ndb_settings:
+
+        db = DAL('google:datastore', 
+                 adapter_args = {'ndb_settings': ndb_settings})
 
     ndb_settings is optional and can be used for per model caching settings.
-    It must be a dict in this form::
+    ndb_settings must be a dict in this form::
 
         ndb_settings = {<table_name>:{<variable_name>:<variable_value>}}
 
@@ -107,9 +103,7 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
     def __init__(self,db,uri,pool_size=0,folder=None,db_codec ='UTF-8',
                  credential_decoder=IDENTITY, driver_args={},
                  adapter_args={}, do_connect=True, after_connection=None):
-        self.use_ndb = adapter_args.get('use_ndb',uri.startswith('google:datastore+ndb'))
-        if self.use_ndb is True:
-            self.types.update({
+        self.types.update({
                 'boolean': ndb.BooleanProperty,
                 'string': (lambda **kwargs: ndb.StringProperty(**kwargs)),
                 'text': ndb.TextProperty,
@@ -131,29 +125,6 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
                 'list:integer': (lambda **kwargs: ndb.IntegerProperty(repeated=True,default=None, **kwargs)),
                 'list:reference': (lambda **kwargs: ndb.IntegerProperty(repeated=True,default=None, **kwargs)),
                 })
-        else:
-            self.types.update({
-                'boolean': gae.BooleanProperty,
-                'string': (lambda **kwargs: gae.StringProperty(multiline=True, **kwargs)),
-                'text': gae.TextProperty,
-                'json': gae.TextProperty,
-                'password': gae.StringProperty,
-                'blob': gae.BlobProperty,
-                'upload': gae.StringProperty,
-                'integer': gae.IntegerProperty,
-                'bigint': gae.IntegerProperty,
-                'float': gae.FloatProperty,
-                'double': gae.FloatProperty,
-                'decimal': GAEDecimalProperty,
-                'date': gae.DateProperty,
-                'time': gae.TimeProperty,
-                'datetime': gae.DateTimeProperty,
-                'id': None,
-                'reference': gae.IntegerProperty,
-                'list:string': (lambda **kwargs: gae.StringListProperty(default=None, **kwargs)),
-                'list:integer': (lambda **kwargs: gae.ListProperty(int,default=None, **kwargs)),
-                'list:reference': (lambda **kwargs: gae.ListProperty(int,default=None, **kwargs)),
-                })
         self.db = db
         self.uri = uri
         self.dbengine = 'google:datastore'
@@ -165,23 +136,34 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         match = self.REGEX_NAMESPACE.match(uri)
         if match:
             namespace_manager.set_namespace(match.group('namespace'))
-        self.keyfunc = (self.use_ndb and ndb.Key) or Key.from_path
 
-        self.ndb_settings = None
-        if 'ndb_settings' in adapter_args:
-            self.ndb_settings = adapter_args['ndb_settings']
+        self.ndb_settings = adapter_args.get('ndb_settings')
 
     def parse_id(self, value, field_type):
         return value
 
-    def represent(self, obj, fieldtype):
-        if fieldtype == "json":
+    def represent(self, obj, fieldtype, tablename=None):
+        if isinstance(obj, ndb.Key):
+            return obj        
+        elif fieldtype == 'id' and tablename:
+            if isinstance(obj, list):
+                return [self.represent(item,fieldtype,tablename) for item in obj]
+            return ndb.Key(tablename, long(obj))
+        elif fieldtype == "json":
             if self.db.has_serializer('json'):
                 return self.db.serialize('json', obj)
             else:
                 return json.dumps(obj)
+        elif isinstance(obj, (Expression, Field)):
+            raise SyntaxError("non supported on GAE")
+        elif isinstance(fieldtype, gae.Property):
+            return obj
+        elif fieldtype.startswith('list:') and not isinstance(obj, list):
+            if fieldtype=='list:string': return str(obj)
+            else: return long(obj)
         else:
-            return NoSQLAdapter.represent(self, obj, fieldtype)
+            obj = NoSQLAdapter.represent(self, obj, fieldtype)
+            return obj
 
     def create_table(self,table,migrate=True,fake_migrate=False, polymodel=None):
         myfields = {}
@@ -195,7 +177,7 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
             field_type = field.type
             if isinstance(field_type, SQLCustomType):
                 ftype = self.types[field_type.native or field_type.type](**attr)
-            elif isinstance(field_type, ((self.use_ndb and ndb.Property) or gae.Property)):
+            elif isinstance(field_type, ndb.Property):
                 ftype = field_type
             elif field_type.startswith('id'):
                 continue
@@ -203,7 +185,7 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
                 precision, scale = field_type[7:].strip('()').split(',')
                 precision = int(precision)
                 scale = int(scale)
-                dec_cls = (self.use_ndb and NDBDecimalProperty) or GAEDecimalProperty
+                dec_cls = NDBDecimalProperty
                 ftype = dec_cls(precision, scale, **attr)
             elif field_type.startswith('reference'):
                 if field.notnull:
@@ -222,15 +204,14 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
                 ftype = self.types[field_type](**attr)
             myfields[field.name] = ftype
         if not polymodel:
-            model_cls = (self.use_ndb and ndb.Model) or gae.Model
+            model_cls = ndb.Model
             table._tableobj =  classobj(table._tablename, (model_cls, ), myfields)
-            if self.use_ndb:
-                # Set NDB caching variables
-                if self.ndb_settings and (table._tablename in self.ndb_settings):
-                    for k, v in self.ndb_settings.iteritems():
-                        setattr(table._tableobj, k, v)
+            # Set NDB caching variables
+            if self.ndb_settings and (table._tablename in self.ndb_settings):
+                for k, v in self.ndb_settings.iteritems():
+                    setattr(table._tableobj, k, v)
         elif polymodel==True:
-            pm_cls = (self.use_ndb and NDBPolyModel) or PolyModel
+            pm_cls = NDBPolyModel
             table._tableobj = classobj(table._tablename, (pm_cls, ), myfields)
         elif isinstance(polymodel,Table):
             table._tableobj = classobj(table._tablename, (polymodel._tableobj, ), myfields)
@@ -239,7 +220,9 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         return None
 
     def expand(self,expression,field_type=None):
-        if isinstance(expression,Field):
+        if expression is None:
+            return None
+        elif isinstance(expression,Field):
             if expression.type in ('text', 'blob', 'json'):
                 raise SyntaxError('AppEngine does not index by: %s' % expression.type)
             return expression.name
@@ -255,109 +238,83 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         elif isinstance(expression,(list,tuple)):
             return ','.join([self.represent(item,field_type) for item in expression])
         else:
-            return str(expression)
+            raise NotImplemtedError
 
-    ### TODO from gql.py Expression
     def AND(self,first,second):
-        a = self.expand(first)
-        b = self.expand(second)
-        if b[0].name=='__key__' and a[0].name!='__key__':
-            return b+a
-        return a+b
+        first = self.expand(first)
+        second = self.expand(second)
+        # none means lack of query (true)
+        if first == None: return second 
+        return ndb.AND(first, second)
+
+    def OR(self,first,second):
+        first = self.expand(first)
+        second = self.expand(second)
+        # none means lack of query (true)
+        if first == None or second == None: return None 
+        return ndb.OR(first, second)
+
+    GAE_FILTER_OPTIONS = {
+        '=': lambda a,b: a==b,
+        '>': lambda a,b: a>b,
+        '<': lambda a,b: a<b,
+        '<=': lambda a,b: a<=b,
+        '>=': lambda a,b: a>=b,
+        '!=': lambda a,b: a!=b,
+        'in': lambda a,b: a.IN(b),
+        }
+
+    def gaef(self,first, op, second):
+        value = self.represent(second,first.type,first._tablename)
+        name = first.name if first.name != 'id' else 'key' 
+        if name == 'key' and op in ('>','!=') and second in (0,'0'):
+            return  None
+        gfield = getattr(first.table._tableobj, name)
+        token = self.GAE_FILTER_OPTIONS[op](gfield,value)
+        return token
 
     def EQ(self,first,second=None):
-        if isinstance(second, Key):
-            return [GAEF(first.name,'=',second,lambda a,b:a==b)]
-        return [GAEF(first.name,'=',self.represent(second,first.type),lambda a,b:a==b)]
+        return self.gaef(first,'=',second)
 
     def NE(self,first,second=None):
-        if first.type != 'id':
-            return [GAEF(first.name,'!=',self.represent(second,first.type),lambda a,b:a!=b)]
-        else:
-            if not second is None:
-                second = self.keyfunc(first._tablename, long(second))
-            return [GAEF(first.name,'!=',second,lambda a,b:a!=b)]
+        return self.gaef(first,'!=',second)
 
     def LT(self,first,second=None):
-        if first.type != 'id':
-            return [GAEF(first.name,'<',self.represent(second,first.type),lambda a,b:a<b)]
-        else:
-            second = self.keyfunc(first._tablename, long(second))
-            return [GAEF(first.name,'<',second,lambda a,b:a<b)]
+        return self.gaef(first,'<',second)
 
     def LE(self,first,second=None):
-        if first.type != 'id':
-            return [GAEF(first.name,'<=',self.represent(second,first.type),lambda a,b:a<=b)]
-        else:
-            second = self.keyfunc(first._tablename, long(second))
-            return [GAEF(first.name,'<=',second,lambda a,b:a<=b)]
+        return self.gaef(first,'<=',second)
 
     def GT(self,first,second=None):
-        if first.type != 'id' or second==0 or second == '0':
-            return [GAEF(first.name,'>',self.represent(second,first.type),lambda a,b:a>b)]
-        else:
-            second = self.keyfunc(first._tablename, long(second))
-            return [GAEF(first.name,'>',second,lambda a,b:a>b)]
+        return self.gaef(first,'>',second)
 
     def GE(self,first,second=None):
-        if first.type != 'id':
-            return [GAEF(first.name,'>=',self.represent(second,first.type),lambda a,b:a>=b)]
-        else:
-            second = self.keyfunc(first._tablename, long(second))
-            return [GAEF(first.name,'>=',second,lambda a,b:a>=b)]
+        return self.gaef(first,'>=',second)
 
     def INVERT(self,first):
         return '-%s' % first.name
 
     def COMMA(self,first,second):
-        return '%s, %s' % (self.expand(first),self.expand(second))
+        return '%s, %s' % (first.name,second.name)
 
     def BELONGS(self,first,second=None):
         if not isinstance(second,(list, tuple, set)):
             raise SyntaxError("Not supported")
-        if not self.use_ndb:
-            if isinstance(second,set):
-                second = list(second)
-        if first.type == 'id':
-            second = [self.keyfunc(first._tablename, int(i)) for i in second]
-        return [GAEF(first.name,'in',second,lambda a,b:a in b)]
+        if not isinstance(second, list):
+            second = list(second)
+        return self.gaef(first,'in',second)
 
     def CONTAINS(self,first,second,case_sensitive=False):
-        # silently ignoring: GAE can only do case sensitive matches!
+        # silently ignoring: GAE can only do case sensitive matches!        
         if not first.type.startswith('list:'):
             raise SyntaxError("Not supported")
-        return [GAEF(first.name,'=',self.expand(second,first.type[5:]),lambda a,b:b in a)]
+        return self.gaef(first,'=',second)
 
     def NOT(self,first):
-        nops = { self.EQ: self.NE,
-                 self.NE: self.EQ,
-                 self.LT: self.GE,
-                 self.GT: self.LE,
-                 self.LE: self.GT,
-                 self.GE: self.LT}
-        if not isinstance(first,Query):
-            raise SyntaxError("Not suported")
-        nop = nops.get(first.op,None)
-        if not nop:
-            raise SyntaxError("Not suported %s" % first.op.__name__)
-        first.op = nop
-        return self.expand(first)
+        raise NotImplementedError
 
     def truncate(self,table,mode):
         self.db(self.db._adapter.id_query(table)).delete()
-
-    GAE_FILTER_OPTIONS = {
-        '=': lambda q, t, p, v: q.filter(getattr(t,p) == v),
-        '>': lambda q, t, p, v: q.filter(getattr(t,p) > v),
-        '<': lambda q, t, p, v: q.filter(getattr(t,p) < v),
-        '<=': lambda q, t, p, v: q.filter(getattr(t,p) <= v),
-        '>=': lambda q, t, p, v: q.filter(getattr(t,p) >= v),
-        '!=': lambda q, t, p, v: q.filter(getattr(t,p) != v),
-        'in': lambda q, t, p, v: q.filter(getattr(t,p).IN(v)),
-        }
-
-    def filter(self, query, tableobj, prop, op, value):
-        return self.GAE_FILTER_OPTIONS[op](query, tableobj, prop, value)
 
     def select_raw(self,query,fields=None,attributes=None,count_only=False):
         db = self.db
@@ -389,9 +346,10 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         tableobj = db[tablename]._tableobj
         filters = self.expand(query)
 
+        ## DETERMINE PROJECTION
         projection = None
         if len(db[tablename].fields) == len(fields):
-            #getting all fields, not a projection query
+            # getting all fields, not a projection query
             projection = None
         elif args_get('projection') == True:
             projection = []
@@ -409,57 +367,30 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
 
         # real projection's can't include 'id'.
         # it will be added to the result later
-        query_projection = [
-            p for p in projection if \
-                p != db[tablename]._id.name] if projection and \
-                args_get('projection') == True\
-                else None
+        if projection and args_get('projection') == True:
+            query_projection = filter(lambda p: p != db[tablename]._id.name,
+                                      projection)
+        else:
+            query_projection = None
+        ## DONE WITH PROJECTION
 
         cursor = args_get('reusecursor')
         cursor = cursor if isinstance(cursor, str) else None
-        if self.use_ndb:
-            qo = ndb.QueryOptions(projection=query_projection, cursor=cursor)
+        qo = ndb.QueryOptions(projection=query_projection, cursor=cursor)
+        
+        if filters == None:
             items = tableobj.query(default_options=qo)
+        elif (hasattr(filters,'_FilterNode__name') and 
+            filters._FilterNode__name=='__key__' and
+            filters._FilterNode__opsymbol=='='):
+            item = ndb.Key.from_old_key(filters._FilterNode__value).get()
+            items = [item] if item else []
         else:
-            items = gae.Query(tableobj, projection=query_projection, cursor=cursor)
-
-        for filter in filters:
-            if (args_get('projection') == True and
-                filter.name in query_projection and
-                filter.op in ('=', '<=', '>=')):
-                raise SyntaxError("projection fields cannot have equality filters")
-            if filter.name=='__key__' and filter.op=='>' and filter.value==0:
-                continue
-            elif filter.name=='__key__' and filter.op=='=':
-                if filter.value==0:
-                    items = []
-                elif isinstance(filter.value, (self.use_ndb and ndb.Key) or Key):
-                    # key qeuries return a class instance,
-                    # can't use projection
-                    # extra values will be ignored in post-processing later
-                    item = filter.value.get() if self.use_ndb else tableobj.get(filter.value)
-                    items = [item] if item else []
-                else:
-                    # key qeuries return a class instance,
-                    # can't use projection
-                    # extra values will be ignored in post-processing later
-                    item = tableobj.get_by_id(filter.value)
-                    items = [item] if item else []
-            elif isinstance(items,list): # i.e. there is a single record!
-                items = [i for i in items if filter.apply(
-                        getattr(item,filter.name),filter.value)]
-            else:
-                if filter.name=='__key__' and filter.op != 'in':
-                    items.order(tableobj._key) if self.use_ndb else items.order('__key__')
-                if self.use_ndb:
-                    items = self.filter(items, tableobj, filter.name, filter.op, filter.value)
-                else:
-                    items = items.filter('%s %s' % (filter.name,filter.op), filter.value)
+            items = tableobj.query(filters, default_options=qo)
 
         if count_only:
             items = [len(items) if isinstance(items,list) else items.count()]
         elif not isinstance(items,list):
-            query = items
             if args_get('left', None):
                 raise SyntaxError('Set: no left join in appengine')
             if args_get('groupby', None):
@@ -473,39 +404,26 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
                     orderby = self.expand(orderby)
                 orders = orderby.split(', ')
                 for order in orders:
-                    if self.use_ndb:
-                        #TODO There must be a better way
-                        def make_order(o):
-                            s = str(o)
-                            desc = s[0] == '-'
-                            s = (desc and s[1:]) or s
-                            return  (desc and  -getattr(tableobj, s)) or getattr(tableobj, s)
-                        _order = {'-id':-tableobj._key,'id':tableobj._key}.get(order)
-                        if _order is None:
-                            _order = make_order(order)
-                        query = query.order(_order)
-                    else:
-                        order={'-id':'-__key__','id':'__key__'}.get(order,order)
-                        query = query.order(order)
+                    #TODO There must be a better way
+                    def make_order(o):
+                        s = str(o)
+                        desc = s[0] == '-'
+                        s = (desc and s[1:]) or s
+                        return  (desc and  -getattr(tableobj, s)) or getattr(tableobj, s)
+                    orders = {'-id':-tableobj._key,'id':tableobj._key}
+                    _order = orders.get(order, make_order(order))
+                    items = items.order(_order)
 
             if args_get('limitby', None):
                 (lmin, lmax) = attributes['limitby']
                 limit, fetch_args = lmax-lmin, {'offset':lmin,'keys_only':True}
 
-                if self.use_ndb:
-                    keys, cursor, more = query.fetch_page(limit,**fetch_args)
-                    items = ndb.get_multi(keys)
-                else:
-                    keys =  query.fetch(limit, **fetch_args)
-                    items = gae.get(keys)
-                    cursor = query.cursor()
-                #cursor is only useful if there was a limit and we didn't return
-                # all results
+                keys, cursor, more = items.fetch_page(limit,**fetch_args)
+                items = ndb.get_multi(keys)
+                # cursor is only useful if there was a limit and we 
+                # didn't return all results
                 if args_get('reusecursor'):
                     db['_lastcursor'] = cursor
-            else:
-                # if a limit is not specified, always return an iterator
-                rows = query
 
         return (items, tablename, projection or db[tablename].fields)
 
@@ -545,10 +463,10 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         return processor(rows,fields,colnames,False)
 
     def parse_list_integers(self, value, field_type):
-        return value[:] if self.use_ndb else value
+        return value[:]
 
     def parse_list_strings(self, value, field_type):
-        return value[:] if self.use_ndb else value
+        return value[:]
 
     def count(self,query,distinct=None,limit=None):
         if distinct:
@@ -566,23 +484,18 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         (items, tablename, fields) = self.select_raw(query)
         # items can be one item or a query
         if not isinstance(items,list):
-            #use a keys_only query to ensure that this runs as a datastore
+            # use a keys_only query to ensure that this runs as a datastore
             # small operations
             leftitems = items.fetch(1000, keys_only=True)
             counter = 0
             while len(leftitems):
                 counter += len(leftitems)
-                if self.use_ndb:
-                    ndb.delete_multi(leftitems)
-                else:
-                    gae.delete(leftitems)
+                ndb.delete_multi(leftitems)
                 leftitems = items.fetch(1000, keys_only=True)
         else:
             counter = len(items)
-            if self.use_ndb:
-                ndb.delete_multi([item.key for item in items])
-            else:
-                gae.delete(items)
+            ndb.delete_multi([item.key for item in items])
+            
         return counter
 
     def update(self,tablename,query,update_fields):
@@ -602,7 +515,7 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         # table._db['_lastsql'] = self._insert(table,fields)
         tmp = table._tableobj(**dfields)
         tmp.put()
-        key = tmp.key if self.use_ndb else tmp.key()
+        key = tmp.key
         rid = Reference(key.id())
         (rid._table, rid._record, rid._gaekey) = (table, None, key)
         return rid
@@ -612,8 +525,5 @@ class GoogleDatastoreAdapter(NoSQLAdapter):
         for item in items:
             dfields=dict((f.name,self.represent(v,f.type)) for f,v in item)
             parsed_items.append(table._tableobj(**dfields))
-        if self.use_ndb:
-            ndb.put_multi(parsed_items)
-        else:
-            gae.put(parsed_items)
+        ndb.put_multi(parsed_items)
         return True

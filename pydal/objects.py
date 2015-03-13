@@ -436,8 +436,9 @@ class Table(object):
                             if tn == name or getattr(db[tn],'_ot',None)==name])
             query = self._common_filter
             if query:
-                newquery = query & newquery
-            self._common_filter = newquery
+                self._common_filter = lambda q: reduce(AND, [query(q), newquery(q)])
+            else:
+                self._common_filter = newquery
 
     def _validate(self, **vars):
         errors = Row()
@@ -545,12 +546,18 @@ class Table(object):
         if not key is DEFAULT:
             if isinstance(key, Query):
                 record = self._db(key).select(
-                    limitby=(0,1),for_update=for_update, orderby=orderby, orderby_on_limitby=False).first()
+                    limitby=(0,1),
+                    for_update=for_update,
+                    orderby=orderby,
+                    orderby_on_limitby=False).first()
             elif not str(key).isdigit():
                 record = None
             else:
                 record = self._db(self._id == key).select(
-                    limitby=(0,1),for_update=for_update, orderby=orderby, orderby_on_limitby=False).first()
+                    limitby=(0,1),
+                    for_update=for_update,
+                    orderby=orderby,
+                    orderby_on_limitby=False).first()
             if record:
                 for k,v in iteritems(kwargs):
                     if record[k]!=v: return None
@@ -724,11 +731,13 @@ class Table(object):
 
     def _defaults(self, fields):
         "If there are no fields/values specified, return table defaults"
-        if not fields:
-            fields = {}
-            for field in self:
-                if field.type != "id":
-                    fields[field.name] = field.default
+        fields = copy.copy(fields)
+        for field in self:
+             if (not field.name in fields and
+                 field.type != "id" and 
+                 field.compute is not None and 
+                 field.default is not None):
+                 fields[field.name] = field.default
         return fields
 
     def _insert(self, **fields):
@@ -834,10 +843,11 @@ class Table(object):
 
         if record:
             response = self.validate_and_update(_key, **fields)
-            primary_keys = {}
-            for key in self._primarykey:
-                primary_keys[key] = getattr(record, key)
-            response.id = primary_keys
+            if hasattr(self, '_primarykey'):
+                primary_keys = {}
+                for key in self._primarykey:
+                    primary_keys[key] = getattr(record, key)
+                response.id = primary_keys
         else:
             response = self.validate_and_insert(**fields)
         return response
@@ -1330,6 +1340,10 @@ class Expression(object):
     def st_simplify(self, value):
         db = self.db
         return Expression(db, db._adapter.ST_SIMPLIFY, self, value, self.type)
+
+    def st_simplifypreservetopology(self, value):
+        db = self.db
+        return Expression(db, db._adapter.ST_SIMPLIFYPRESERVETOPOLOGY, self, value, self.type)
 
     # GIS queries
 
@@ -2063,7 +2077,7 @@ class Set(object):
             cache_model, time_expire = cache
             sql = self._count(distinct=distinct)
             key = db._uri + '/' + sql
-            if len(key)>200: key = hashlib_md5(key).hexdigest()
+            key = hashlib_md5(key).hexdigest()
             return cache_model(
                 key,
                 (lambda self=self,distinct=distinct: \
@@ -2492,7 +2506,6 @@ class Rows(object):
             fields: a list of fields to transform (if None, all fields with
                 "represent" attributes will be transformed)
         """
-
         if i is None:
             return (self.render(i, fields=fields) for i in range(len(self)))
         if not self.db.has_representer('rows_render'):
@@ -2661,6 +2674,7 @@ class Rows(object):
                 return bar_encode(value)
             return value
 
+        repr_cache = {}
         for record in self:
             row = []
             for col in colnames:
@@ -2677,7 +2691,14 @@ class Rows(object):
                     if field.type=='blob' and not value is None:
                         value = base64.b64encode(value)
                     elif represent and field.represent:
-                        value = field.represent(value,record)
+                        if field.type.startswith('reference'):
+                            if field not in repr_cache:
+                                repr_cache[field] = {}
+                            if value not in repr_cache[field]:
+                                repr_cache[field][value] = field.represent(value, record)
+                            value = repr_cache[field][value]
+                        else:
+                            value = field.represent(value, record)
                     row.append(none_exception(value))
             writer.writerow(row)
 

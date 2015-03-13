@@ -5,7 +5,6 @@ import sys
 import locale
 import datetime
 import decimal
-import logging
 import copy
 import time
 import base64
@@ -19,10 +18,12 @@ from .._gae import gae
 from ..connection import ConnectionPool
 from ..objects import Expression, Field, Query, Table, Row, FieldVirtual, \
     FieldMethod, LazyReferenceGetter, LazySet, VirtualCommand, Rows
-from ..helpers.regex import REGEX_NO_GREEDY_ENTITY_NAME, REGEX_TYPE, REGEX_SELECT_AS_PARSER
+from ..helpers.regex import REGEX_NO_GREEDY_ENTITY_NAME, REGEX_TYPE, \
+    REGEX_SELECT_AS_PARSER
 from ..helpers.methods import xorify, use_common_filters, bar_encode, \
     bar_decode_integer, bar_decode_string
-from ..helpers.classes import SQLCustomType, SQLALL, Reference, RecordUpdater, RecordDeleter
+from ..helpers.classes import SQLCustomType, SQLALL, Reference, \
+    RecordUpdater, RecordDeleter
 
 long = integer_types[-1]
 
@@ -31,8 +32,9 @@ CALLABLETYPES = (types.LambdaType, types.FunctionType,
                  types.BuiltinFunctionType,
                  types.MethodType, types.BuiltinMethodType)
 SELECT_ARGS = set(
-    ('orderby', 'groupby', 'limitby','required', 'cache', 'left',
-     'distinct', 'having', 'join','for_update', 'processor','cacheable', 'orderby_on_limitby'))
+    ('orderby', 'groupby', 'limitby', 'required', 'cache', 'left', 'distinct',
+     'having', 'join', 'for_update', 'processor', 'cacheable',
+     'orderby_on_limitby'))
 
 
 class AdapterMeta(type):
@@ -42,6 +44,10 @@ class AdapterMeta(type):
     """
 
     def __call__(cls, *args, **kwargs):
+        uploads_in_blob = kwargs.get('adapter_args', {}).get(
+            'uploads_in_blob', cls.uploads_in_blob)
+        cls.uploads_in_blob = uploads_in_blob
+
         entity_quoting = kwargs.get('entity_quoting', False)
         if 'entity_quoting' in kwargs:
             del kwargs['entity_quoting']
@@ -53,11 +59,8 @@ class AdapterMeta(type):
         else:
             quot = obj.QUOTE_TEMPLATE
             regex_ent = REGEX_NO_GREEDY_ENTITY_NAME
-        obj.REGEX_TABLE_DOT_FIELD = re.compile(r'^' + \
-                                                    quot % regex_ent + \
-                                                    r'\.' + \
-                                                    quot % regex_ent + \
-                                                    r'$')
+        obj.REGEX_TABLE_DOT_FIELD = re.compile(
+            r'^' + quot % regex_ent + r'\.' + quot % regex_ent + r'$')
 
         return obj
 
@@ -78,7 +81,8 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
     dbpath = None
     folder = None
     connector = lambda *args, **kwargs: None  # __init__ should override this
-
+    TRUE_exp = '1'
+    FALSE_exp = '0'
     TRUE = 'T'
     FALSE = 'F'
     T_SEP = ' '
@@ -515,7 +519,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         sql_fields_old = dict(map(fix, iteritems(sql_fields_old)))
         sql_fields_aux = dict(map(fix, iteritems(sql_fields_aux)))
         if db._debug:
-            logging.debug('migrating %s to %s' % (sql_fields_old,sql_fields))
+            db.logger.debug('migrating %s to %s' % (sql_fields_old,sql_fields))
 
         keys = list(sql_fields.keys())
         for key in sql_fields_old:
@@ -549,9 +553,9 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                     ftype.startswith('geometry')):
                     geotype, parms = ftype[:-1].split('(')
                     schema = parms.split(',')[0]
-                    query = [ "SELECT DropGeometryColumn ('%(schema)s', "+
-                              "'%(table)s', '%(field)s');" %
-                              dict(schema=schema, table=tablename, field=key,) ]
+                    query = [ "SELECT DropGeometryColumn ('%(schema)s', \
+                              '%(table)s', '%(field)s');" %
+                              dict(schema=schema, table=tablename, field=key) ]
                 elif self.dbengine in ('firebird',):
                     query = ['ALTER TABLE %s DROP %s;' %
                              (self.QUOTE_TEMPLATE % tablename, self.QUOTE_TEMPLATE % key)]
@@ -912,7 +916,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             return ','.join(self.represent(item,field_type) \
                                 for item in expression)
         elif isinstance(expression, bool):
-            return '1' if expression else '0'
+            return self.db._adapter.TRUE_exp if expression else self.db._adapter.FALSE_exp
         else:
             return str(expression)
 
@@ -1040,11 +1044,6 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         tablenames = tables(query)
         tablenames_for_common_filters = tablenames
         for field in fields:
-            if isinstance(field, basestring):
-                m = self.REGEX_TABLE_DOT_FIELD.match(field)
-                if m:
-                    tn,fn = m.groups()
-                    field = self.db[tn][fn]
             for tablename in tables(field):
                 if not tablename in tablenames:
                     tablenames.append(tablename)
@@ -1201,7 +1200,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         else:
             (cache_model, time_expire) = cache
             key = self.uri + '/' + sql + '/rows'
-            if len(key)>200: key = hashlib_md5(key).hexdigest()
+            key = hashlib_md5(key).hexdigest()
             def _select_aux2():
                 self.execute(sql)
                 return self._fetchall()
@@ -1224,7 +1223,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             del attributes['cache']
             (cache_model, time_expire) = cache
             key = self.uri + '/' + sql
-            if len(key)>200: key = hashlib_md5(key).hexdigest()
+            key = hashlib_md5(key).hexdigest()
             args = (sql,fields,attributes)
             return cache_model(
                 key,
@@ -1622,7 +1621,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                         # GoogleDatastoreAdapter
                         # references
                         if GoogleDatastoreAdapter and isinstance(self, GoogleDatastoreAdapter):
-                            id = value.key.id() if self.use_ndb else value.key().id_or_name()
+                            id = value.key.id()
                             colset[fieldname] = id
                             colset.gae_item = value
                         else:
@@ -1733,11 +1732,6 @@ class NoSQLAdapter(BaseAdapter):
             obj = obj()
         if isinstance(fieldtype, SQLCustomType):
             return fieldtype.encoder(obj)
-        if isinstance(obj, (Expression, Field)):
-            raise SyntaxError("non supported on GAE")
-        if self.dbengine == 'google:datastore':
-            if isinstance(fieldtype, gae.Property):
-                return obj
         is_string = isinstance(fieldtype,str)
         is_list = is_string and field_is_type('list:')
         if is_list:
@@ -1745,6 +1739,7 @@ class NoSQLAdapter(BaseAdapter):
                 obj = []
             if not isinstance(obj, (list, tuple)):
                 obj = [obj]
+            obj = [item for item in obj if item]
         if obj == '' and not \
                 (is_string and fieldtype[:2] in ['st','te', 'pa','up']):
             return None

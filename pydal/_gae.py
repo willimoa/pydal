@@ -78,6 +78,6 @@ try:
                 return decimal.Decimal(value)
             raise TypeError("Property %s must be a Decimal or string."
                             % self._name)
-except ImportError:
+except:
     gae = None
     Key = None

@@ -58,6 +58,7 @@ if IS_GAE:
     gaetestbed = testbed.Testbed()
     gaetestbed.activate()
     gaetestbed.init_datastore_v3_stub()
+    gaetestbed.init_memcache_stub()
 
 
 ALLOWED_DATATYPES = [
@@ -554,29 +555,6 @@ class TestMinMaxSumAvg(unittest.TestCase):
         s = db.tt.aa.avg()
         self.assertEqual(db().select(s).first()[s], 2)
         drop(db.tt)
-
-"""
-[gi0baro] removed cache test due to web2py's dependency.
-          TODO: re-implement adding a caching system
-@unittest.skipIf(IS_IMAP, "TODO: IMAP test")
-class TestCache(unittest.TestCase):
-    def testRun(self):
-        from cache import CacheInRam
-        cache = CacheInRam()
-        db = DAL(DEFAULT_URI, check_reserved=['all'])
-        db.define_table('tt', Field('aa'))
-        db.tt.insert(aa='1')
-        r0 = db().select(db.tt.ALL)
-        r1 = db().select(db.tt.ALL, cache=(cache, 1000))
-        self.assertEqual(len(r0),len(r1))
-        r2 = db().select(db.tt.ALL, cache=(cache, 1000))
-        self.assertEqual(len(r0),len(r2))
-        r3 = db().select(db.tt.ALL, cache=(cache, 1000), cacheable=True)
-        self.assertEqual(len(r0),len(r3))
-        r4 = db().select(db.tt.ALL, cache=(cache, 1000), cacheable=True)
-        self.assertEqual(len(r0),len(r4))
-        drop(db.tt)
-"""
 
 
 @unittest.skipIf(IS_IMAP, "Skip IMAP")
@@ -1378,6 +1356,29 @@ class TestQuotesByDefault(unittest.TestCase):
     """
     def testme(self):
         return
+
+@unittest.skipIf(IS_IMAP, "TODO: IMAP test")
+class TestRecordVersioning(unittest.TestCase):
+
+    def testRun(self):
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('t0', Field('name'),
+                        Field('is_active', 'boolean', default=True))
+        db.t0._enable_record_versioning(archive_name='t0_archive')
+        self.assertTrue('t0_archive' in db)
+        i_id = db.t0.insert(name='web2py1')
+        db.t0.insert(name='web2py2')
+        db(db.t0.name == 'web2py2').delete()
+        self.assertEqual(len(db(db.t0).select()), 1)
+        self.assertEquals(db(db.t0).count(), 1)
+        db(db.t0.id == i_id).update(name='web2py3')
+        self.assertEqual(len(db(db.t0).select()), 1)
+        self.assertEqual(db(db.t0).count(), 1)
+        self.assertEqual(len(db(db.t0_archive).select()), 2)
+        self.assertEqual(db(db.t0_archive).count(), 2)
+        drop(db.t0)
+        return
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import re
 from ._gae import gae
 
 DRIVERS = {}
@@ -25,16 +24,7 @@ else:
         pass
 
     try:
-        # first try contrib driver, then from site-packages (if installed)
-        try:
-            from .contrib import pymysql as pymysql
-            # monkeypatch pymysql because they havent fixed the bug:
-            # https://github.com/petehunt/PyMySQL/issues/86
-            pymysql.ESCAPE_REGEX = re.compile("'")
-            pymysql.ESCAPE_MAP = {"'": "''"}
-            # end monkeypatch
-        except ImportError:
-            import pymysql
+        import pymysql
         DRIVERS['pymysql'] = pymysql
     except ImportError:
         pass
@@ -59,11 +49,7 @@ else:
         psycopg2_adapt = None
 
     try:
-        # first try contrib driver, then from site-packages (if installed)
-        try:
-            from .contrib.pg8000 import dbapi as pg8000
-        except ImportError:
-            import pg8000.dbapi as pg8000
+        import pg8000
         DRIVERS['pg8000'] = pg8000
     except ImportError:
         pass
@@ -75,13 +61,7 @@ else:
         cx_Oracle = None
 
     try:
-        try:
-            import pyodbc
-        except ImportError:
-            try:
-                from .contrib import pypyodbc as pyodbc
-            except Exception as e:
-                raise ImportError(str(e))
+        import pyodbc
         DRIVERS['pyodbc'] = pyodbc
         #DRIVERS.append('DB2(pyodbc)')
         #DRIVERS.append('Teradata(pyodbc)')

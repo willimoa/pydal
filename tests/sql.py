@@ -17,14 +17,6 @@ DEFAULT_URI = os.getenv('DB', 'sqlite:memory')
 print('Testing against %s engine (%s)' % (DEFAULT_URI.partition(':')[0],
                                           DEFAULT_URI))
 
-from pydal._compat import PY2, basestring, StringIO, integer_types
-if PY2:
-    StringIO = StringIO.StringIO
-long = integer_types[-1]
-
-from pydal import DAL, Field
-from pydal.objects import Table
-from pydal.helpers.classes import SQLALL
 
 ALLOWED_DATATYPES = [
     'string',
@@ -311,6 +303,8 @@ class TestSelect(unittest.TestCase):
         self.assertEqual(db((db.tt.aa > '1') | (db.tt.aa < '3')).count(), 3)
         self.assertEqual(db((db.tt.aa > '1') & ~(db.tt.aa > '2')).count(), 1)
         self.assertEqual(db(~(db.tt.aa > '1') & (db.tt.aa > '2')).count(), 0)
+        # Test for REGEX_TABLE_DOT_FIELD
+        self.assertEqual(db(db.tt).select('tt.aa').first()[db.tt.aa], '1')
         db.tt.drop()
 
 class TestAddMethod(unittest.TestCase):
@@ -363,6 +357,17 @@ class TestContains(unittest.TestCase):
         self.assertEqual(db(db.tt.bb.contains('b')).count(), 1)
         self.assertEqual(db(db.tt.bb.contains('d')).count(), 0)
         self.assertEqual(db(db.tt.aa.contains(db.tt.bb)).count(), 1)
+        #case-sensitivity tests, if 1 it isn't
+        is_case_insensitive = db(db.tt.bb.like('%AA%')).count()
+        if is_case_insensitive:
+            self.assertEqual(db(db.tt.aa.contains('AAA')).count(), 2)
+            self.assertEqual(db(db.tt.bb.contains('A')).count(), 3)
+        else:
+            self.assertEqual(db(db.tt.aa.contains('AAA', case_sensitive=True)).count(), 0)
+            self.assertEqual(db(db.tt.bb.contains('A', case_sensitive=True)).count(), 0)
+            self.assertEqual(db(db.tt.aa.contains('AAA', case_sensitive=False)).count(), 2)
+            self.assertEqual(db(db.tt.bb.contains('A', case_sensitive=False)).count(), 3)
+
         db.tt.drop()
 
 
@@ -457,6 +462,8 @@ class TestExpressions(unittest.TestCase):
         sum = (db.tt.aa + 1).sum()
         self.assertEqual(db(db.tt.aa == 2).select(sum).first()[sum], 3)
         self.assertEqual(db(db.tt.aa == -2).select(sum).first()[sum], None)
+        # Test basic expressions evaluated at python level
+        self.assertEqual(db((1==1) & (db.tt.id>0)).count(), 3)
         db.tt.drop()
 
     def testSubstring(self):
@@ -590,29 +597,6 @@ class TestMinMaxSumAvg(unittest.TestCase):
         s = db.tt.aa.avg()
         self.assertEqual(db().select(s).first()[s], 2)
         db.tt.drop()
-
-
-"""
-[gi0baro] removed cache test due to web2py's dependency.
-          TODO: re-implement adding a caching system
-
-class TestCacheSelect(unittest.TestCase):
-    def testRun(self):
-        cache = CacheInRam()
-        db = DAL(DEFAULT_URI, check_reserved=['all'])
-        db.define_table('tt', Field('aa'))
-        db.tt.insert(aa='1')
-        r0 = db().select(db.tt.ALL)
-        r1 = db().select(db.tt.ALL, cache=(cache, 1000))
-        self.assertEqual(len(r0),len(r1))
-        r2 = db().select(db.tt.ALL, cache=(cache, 1000))
-        self.assertEqual(len(r0),len(r2))
-        r3 = db().select(db.tt.ALL, cache=(cache, 1000), cacheable=True)
-        self.assertEqual(len(r0),len(r3))
-        r4 = db().select(db.tt.ALL, cache=(cache, 1000), cacheable=True)
-        self.assertEqual(len(r0),len(r4))
-        db.tt.drop()
-"""
 
 
 class TestMigrations(unittest.TestCase):
@@ -1660,6 +1644,79 @@ class TestLazy(unittest.TestCase):
         self.assertTrue(('t0' in db._LAZY_TABLES.keys()))
         db.t0.insert(name='1')
         self.assertFalse(('t0' in db._LAZY_TABLES.keys()))
+        db.t0.drop()
+        return
+
+class TestRedefine(unittest.TestCase):
+
+    def testRun(self):
+        db = DAL(DEFAULT_URI, check_reserved=['all'], lazy_tables=True, migrate=False)
+        db.define_table('t_a', Field('code'))
+        self.assertTrue('code' in db.t_a)
+        self.assertTrue('code' in db['t_a'])
+        db.define_table('t_a', Field('code_a'), redefine=True)
+        self.assertFalse('code' in db.t_a)
+        self.assertFalse('code' in db['t_a'])
+        self.assertTrue('code_a' in db.t_a)
+        self.assertTrue('code_a' in db['t_a'])
+        return
+
+class TestUpdateInsert(unittest.TestCase):
+
+    def testRun(self):
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        t0 = db.define_table('t0', Field('name'))
+        i_id = t0.update_or_insert((t0.id == 1), name='web2py')
+        u_id = t0.update_or_insert((t0.id == i_id), name='web2py2')
+        self.assertTrue(i_id != None)
+        self.assertTrue(u_id == None)
+        self.assertTrue(db(t0).count() == 1)
+        self.assertTrue(db(t0.name == 'web2py').count() == 0)
+        self.assertTrue(db(t0.name == 'web2py2').count() == 1)
+        db.t0.drop()
+        return
+
+
+class TestBulkInsert(unittest.TestCase):
+
+    def testRun(self):
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        t0 = db.define_table('t0', Field('name'))
+        global ctr
+        ctr = 0
+        def test_after_insert(i, r):
+            global ctr
+            ctr += 1
+            return True
+        t0._after_insert.append(test_after_insert)
+        items = [{'name':'web2py_%s' % pos} for pos in range(0, 10, 1)]
+        t0.bulk_insert(items)
+        self.assertTrue(db(t0).count() == len(items))
+        for pos in range(0, 10, 1):
+            self.assertTrue(db(t0.name == 'web2py_%s' % pos).count() == 1)
+        self.assertTrue(ctr == len(items))
+        db.t0.drop()
+        return
+
+
+class TestRecordVersioning(unittest.TestCase):
+
+    def testRun(self):
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('t0', Field('name'), Field('is_active', writable=False,readable=False,default=True))
+        db.t0._enable_record_versioning(archive_name='t0_archive')
+        self.assertTrue('t0_archive' in db)
+        i_id = db.t0.insert(name='web2py1')
+        db.t0.insert(name='web2py2')
+        db(db.t0.name == 'web2py2').delete()
+        self.assertEqual(len(db(db.t0).select()), 1)
+        self.assertEquals(db(db.t0).count(), 1)
+        db(db.t0.id == i_id).update(name='web2py3')
+        self.assertEqual(len(db(db.t0).select()), 1)
+        self.assertEqual(db(db.t0).count(), 1)
+        self.assertEqual(len(db(db.t0_archive).select()), 2)
+        self.assertEqual(db(db.t0_archive).count(), 2)
+        db.t0_archive.drop()
         db.t0.drop()
         return
 
