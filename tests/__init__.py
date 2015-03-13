@@ -6,5 +6,4 @@ else:
     from .sql import *
 
 from .validation import TestValidateAndInsert
-from validation import TestValidateAndInsert
-from caching import TestCache
+from .caching import TestCache

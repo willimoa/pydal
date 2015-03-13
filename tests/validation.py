@@ -1,10 +1,9 @@
 import re
 import os
 from ._compat import unittest
+from ._adapt import DEFAULT_URI, NOSQL, IS_IMAP, drop
 from pydal._compat import integer_types
 from pydal import DAL, Field
-from ._compat import unittest
-from ._adapt import DEFAULT_URI, NOSQL, IS_IMAP, drop
 
 long = integer_types[-1]
 
