@@ -1,4 +1,4 @@
-from _adapt import NOSQL
+from ._adapt import NOSQL
 
 if NOSQL:
     from .nosql import *
