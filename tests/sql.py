@@ -8,11 +8,16 @@ import sys
 import os
 import glob
 import datetime
+
 from ._compat import unittest
+
 from pydal._compat import PY2, basestring, StringIO, integer_types
+from pydal import DAL, Field
+from pydal.helpers.classes import SQLALL
+from pydal.objects import Table
+
 if PY2:
     StringIO = StringIO.StringIO
-
 long = integer_types[-1]
 
 #for travis-ci
