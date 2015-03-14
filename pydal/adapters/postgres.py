@@ -42,18 +42,18 @@ class PostgreSQLAdapter(BaseAdapter):
         'reference TFK': ' CONSTRAINT  "FK_%(foreign_table)s_PK" FOREIGN KEY (%(field_name)s) REFERENCES %(foreign_table)s (%(foreign_key)s) ON DELETE %(on_delete_action)s',
     }
 
-    def varquote(self,name):
-        return varquote_aux(name,'"%s"')
+    def varquote(self, name):
+        return varquote_aux(name, '"%s"')
 
-    def adapt(self,obj):
+    def adapt(self, obj):
         if self.driver_name == 'psycopg2':
             return psycopg2_adapt(obj).getquoted()
         elif self.driver_name == 'pg8000':
-            return "'%s'" % str(obj).replace("%","%%").replace("'","''")
+            return "'%s'" % obj.replace("%", "%%").replace("'", "''")
         else:
-            return "'%s'" % str(obj).replace("'","''")
+            return "'%s'" % obj.replace("'", "''")
 
-    def sequence_name(self,table):
+    def sequence_name(self, table):
         return self.QUOTE_TEMPLATE % (table + '_id_seq')
 
     def RANDOM(self):
