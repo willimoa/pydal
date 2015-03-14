@@ -11,7 +11,8 @@ import base64
 import types
 
 from .._compat import PY2, pjoin, exists, pickle, hashlib_md5, iterkeys, \
-    iteritems, with_metaclass, to_unicode, integer_types, basestring
+    iteritems, with_metaclass, to_unicode, integer_types, basestring, \
+    string_types
 from .._globals import IDENTITY
 from .._load import portalocker, json
 from .._gae import gae
@@ -437,10 +438,13 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
 
         if self.uri.startswith('sqlite:///') \
                 or self.uri.startswith('spatialite:///'):
-            path_encoding = sys.getfilesystemencoding() \
-                or locale.getdefaultlocale()[1] or 'utf8'
-            dbpath = to_unicode(
-                self.uri[9:self.uri.rfind('/')]).encode(path_encoding)
+            if PY2:
+                path_encoding = sys.getfilesystemencoding() \
+                    or locale.getdefaultlocale()[1] or 'utf8'
+                dbpath = self.uri[9:self.uri.rfind('/')].decode(
+                    'utf8').encode(path_encoding)
+            else:
+                dbpath = self.uri[9:self.uri.rfind('/')]
         else:
             dbpath = self.folder
 
@@ -449,7 +453,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         elif self.uri.startswith('sqlite:memory')\
                 or self.uri.startswith('spatialite:memory'):
             table._dbt = None
-        elif isinstance(migrate, str):
+        elif isinstance(migrate, string_types):
             table._dbt = pjoin(dbpath, migrate)
         else:
             table._dbt = pjoin(

@@ -13,6 +13,7 @@ if PY2:
     itervalues = lambda d: d.itervalues()
     iteritems = lambda d: d.iteritems()
     integer_types = (int, long)
+    string_types = (str, unicode)
     basestring = basestring
     xrange = xrange
 
@@ -31,6 +32,7 @@ else:
     itervalues = lambda d: iter(d.values())
     iteritems = lambda d: iter(d.items())
     integer_types = (int,)
+    string_types = (str,)
     basestring = str
     xrange = range
 

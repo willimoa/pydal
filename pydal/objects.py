@@ -25,6 +25,8 @@ from .helpers.methods import list_represent, bar_decode_integer, \
     use_common_filters, pluralize
 
 long = integer_types[-1]
+if not PY2:
+    from functools import reduce
 
 DEFAULTLENGTH = {'string':512,
                  'password':512,
@@ -734,8 +736,8 @@ class Table(object):
         fields = copy.copy(fields)
         for field in self:
              if (not field.name in fields and
-                 field.type != "id" and 
-                 field.compute is not None and 
+                 field.type != "id" and
+                 field.compute is not None and
                  field.default is not None):
                  fields[field.name] = field.default
         return fields
