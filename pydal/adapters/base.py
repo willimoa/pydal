@@ -925,10 +925,14 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 self.db._adapter.FALSE_exp
         else:
             rv = expression
-        if PY2:
-            return str(rv)
+        if PY2 or not PY2 and not isinstance(rv, bytes):
+            rv = str(rv)
         else:
-            return rv.encode("utf8")
+            if isinstance(rv, bytes):
+                rv = rv.decode("uf8")
+            else:
+                rv = str(rv)
+        return rv
 
     def table_alias(self, tbl):
         if not isinstance(tbl, Table):
