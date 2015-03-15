@@ -916,6 +916,10 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 out = op()
             return out
         elif field_type:
+            print("expanded with field_type:")
+            rtemp = self.represent(expression, field_type)
+            print(rtemp)
+            print(type(rtemp))
             return str(self.represent(expression,field_type))
         elif isinstance(expression,(list,tuple)):
             return ','.join(self.represent(item,field_type) \
@@ -923,6 +927,9 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         elif isinstance(expression, bool):
             return self.db._adapter.TRUE_exp if expression else self.db._adapter.FALSE_exp
         else:
+            print("expand final else")
+            print(expression)
+            print(type(expression))
             return str(expression)
 
     def table_alias(self, tbl):
@@ -1325,10 +1332,10 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         return self.log_execute(*a, **b)
 
     def represent(self, obj, fieldtype):
+        print("REPRESENT()")
         print(obj)
         print(type(obj))
         print(fieldtype)
-        print(type(fieldtype))
         field_is_type = fieldtype.startswith
         if isinstance(obj, CALLABLETYPES):
             obj = obj()

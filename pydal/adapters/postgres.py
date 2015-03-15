@@ -48,6 +48,7 @@ class PostgreSQLAdapter(BaseAdapter):
         return varquote_aux(name, '"%s"')
 
     def adapt(self, obj):
+        print("POSTGRES adapt")
         print(obj)
         print(type(obj))
         if self.driver_name == 'psycopg2':
