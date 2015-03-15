@@ -122,8 +122,6 @@ For more info::
     help(Field)
 
 """
-from __future__ import print_function
-
 import threading
 import socket
 import urllib
@@ -134,12 +132,14 @@ import glob
 import logging
 from uuid import uuid4
 
-from ._compat import pickle, hashlib_md5, pjoin, ogetattr, osetattr, copyreg, integer_types
+from ._compat import PY2, pickle, hashlib_md5, pjoin, ogetattr, osetattr, \
+    copyreg, integer_types
 from ._globals import GLOBAL_LOCKER, THREAD_LOCAL, DEFAULT, GLOBALS
 from ._load import OrderedDict
 from .helpers.classes import SQLCallableList
 from .helpers.methods import hide_password, smart_query, auto_validators
-from .helpers.regex import REGEX_PYTHON_KEYWORDS, REGEX_DBNAME, REGEX_SEARCH_PATTERN, REGEX_SQUARE_BRACKETS
+from .helpers.regex import REGEX_PYTHON_KEYWORDS, REGEX_DBNAME, \
+    REGEX_SEARCH_PATTERN, REGEX_SQUARE_BRACKETS
 from .objects import Table, Field, Row, Set
 from .adapters import ADAPTERS
 from .adapters.base import BaseAdapter
@@ -1035,14 +1035,15 @@ class DAL(object):
             # sequence of 7-item sequences. each sequence tells about a column.
             # first item is always the field name according to Python Database API specs
             columns = adapter.cursor.description
-            print("columns: ")
-            print(columns)
             # reduce the column info down to just the field names
             fields = colnames or [f[0] for f in columns]
-            print("fields: ")
-            print(fields)
             if len(fields) != len(set(fields)):
                 raise RuntimeError("Result set includes duplicate column names. Specify unique column names using the 'colnames' argument")
+            #: avoid bytes strings in columns names (py3)
+            if columns and not PY2:
+                for i in range(0, len(fields)):
+                    if isinstance(fields[i], bytes):
+                        fields[i] = fields[i].decode("utf8")
 
             # will hold our finished resultset in a list
             data = adapter._fetchall()
