@@ -929,7 +929,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
             rv = str(rv)
         else:
             if isinstance(rv, bytes):
-                rv = rv.decode("uf8")
+                rv = rv.decode("utf8")
             else:
                 rv = str(rv)
         return rv
