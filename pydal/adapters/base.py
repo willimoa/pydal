@@ -1363,7 +1363,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         if obj == '' and not fieldtype[:2] in ['st', 'te', 'js', 'pa', 'up']:
             return 'NULL'
         r = self.represent_exceptions(obj, fieldtype)
-        if not r is None:
+        if r is not None:
             return r
         if fieldtype == 'boolean':
             if obj and not str(obj)[:1].upper() in '0F':
@@ -1434,6 +1434,9 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 obj = obj.decode('utf-8')
             if not isinstance(obj, basestring):
                 obj = str(obj)
+        print("calling adapt:")
+        print(obj)
+        print(type(obj))
         return self.adapt(obj)
 
     def represent_exceptions(self, obj, fieldtype):
