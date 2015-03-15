@@ -48,7 +48,10 @@ class PostgreSQLAdapter(BaseAdapter):
 
     def adapt(self, obj):
         if self.driver_name == 'psycopg2':
-            return psycopg2_adapt(obj).getquoted()
+            rv = psycopg2_adapt(obj).getquoted()
+            if isinstance(rv, bytes):
+                return rv.decode("utf8")
+            return rv
         elif self.driver_name == 'pg8000':
             return "'%s'" % obj.replace("%", "%%").replace("'", "''")
         else:

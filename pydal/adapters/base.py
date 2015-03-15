@@ -926,18 +926,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 self.db._adapter.FALSE_exp
         else:
             rv = expression
-        if PY2:
-            rv = str(rv)
-        else:
-            print(expression)
-            print(rv)
-            print(type(rv))
-            #if isinstance(rv, bytes):
-            #    rv = rv.decode("utf8")
-            #else:
-            #    rv = str(rv)
-            rv = str(rv)
-        return rv
+        return str(rv)
 
     def table_alias(self, tbl):
         if not isinstance(tbl, Table):
