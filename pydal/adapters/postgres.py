@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import print_function
 import re
 
 from .._globals import IDENTITY
@@ -6,6 +7,7 @@ from ..drivers import psycopg2_adapt
 from ..helpers.methods import varquote_aux
 from .base import BaseAdapter
 from ..objects import Expression
+
 
 class PostgreSQLAdapter(BaseAdapter):
     drivers = ('psycopg2','pg8000')
@@ -46,6 +48,8 @@ class PostgreSQLAdapter(BaseAdapter):
         return varquote_aux(name, '"%s"')
 
     def adapt(self, obj):
+        print(obj)
+        print(type(obj))
         if self.driver_name == 'psycopg2':
             return psycopg2_adapt(obj).getquoted()
         elif self.driver_name == 'pg8000':
@@ -66,7 +70,7 @@ class PostgreSQLAdapter(BaseAdapter):
         else:
             return '(%s + %s)' % (self.expand(first), self.expand(second, t))
 
-    def distributed_transaction_begin(self,key):
+    def distributed_transaction_begin(self, key):
         return
 
     def prepare(self,key):
@@ -323,6 +327,7 @@ class PostgreSQLAdapter(BaseAdapter):
         if mode not in ['restrict', 'cascade', '']:
             raise ValueError('Invalid mode: %s' % mode)
         return ['DROP TABLE ' + table.sqlsafe + ' ' + str(mode) + ';']
+
 
 class NewPostgreSQLAdapter(PostgreSQLAdapter):
     drivers = ('psycopg2','pg8000')

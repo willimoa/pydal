@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import print_function
 import re
 import os
 import sys
@@ -1324,12 +1325,16 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         return self.log_execute(*a, **b)
 
     def represent(self, obj, fieldtype):
+        print(obj)
+        print(type(obj))
+        print(fieldtype)
+        print(type(fieldtype))
         field_is_type = fieldtype.startswith
         if isinstance(obj, CALLABLETYPES):
             obj = obj()
         if isinstance(fieldtype, SQLCustomType):
             value = fieldtype.encoder(obj)
-            if value and fieldtype.type in ('string','text', 'json'):
+            if value and fieldtype.type in ('string', 'text', 'json'):
                 return self.adapt(value)
             return value or 'NULL'
         if isinstance(obj, (Expression, Field)):
