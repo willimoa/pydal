@@ -908,6 +908,7 @@ class TestSelectAsDict(unittest.TestCase):
             )
         db.a_table.insert(a_field="aa1", b_field="bb1")
         rtn = db.executesql("SELECT id, b_field, a_field FROM a_table", as_dict=True)
+        print(rtn)
         self.assertEqual(rtn[0]['b_field'], 'bb1')
         rtn = db.executesql("SELECT id, b_field, a_field FROM a_table", as_ordered_dict=True)
         self.assertEqual(rtn[0]['b_field'], 'bb1')
