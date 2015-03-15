@@ -122,6 +122,7 @@ For more info::
     help(Field)
 
 """
+from __future__ import print_function
 
 import threading
 import socket
@@ -1034,8 +1035,12 @@ class DAL(object):
             # sequence of 7-item sequences. each sequence tells about a column.
             # first item is always the field name according to Python Database API specs
             columns = adapter.cursor.description
+            print("columns: ")
+            print(columns)
             # reduce the column info down to just the field names
             fields = colnames or [f[0] for f in columns]
+            print("fields: ")
+            print(fields)
             if len(fields) != len(set(fields)):
                 raise RuntimeError("Result set includes duplicate column names. Specify unique column names using the 'colnames' argument")
 
