@@ -915,8 +915,10 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 out = op()
             return out
         elif field_type:
-            #return str(self.represent(expression, field_type))
-            return self.represent(expression, field_type)
+            rv = str(self.represent(expression, field_type))
+            if PY2:
+                return str(rv)
+            return rv
         elif isinstance(expression,(list,tuple)):
             return ','.join(self.represent(item,field_type) \
                                 for item in expression)
