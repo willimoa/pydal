@@ -43,7 +43,7 @@ matrix:
       env: ADAPTER=google
     - python: '3.4'
       env: ADAPTER=google
-    
+
 before_script:
   - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then pip install --download-cache $HOME/.pip-cache python-coveralls; fi
   - if [[ $ADAPTER == mongo ]]; then sleep 15; fi;

@@ -1,15 +1,10 @@
 import re
-import os
 from ._compat import unittest
 from ._adapt import DEFAULT_URI, NOSQL, IS_IMAP, drop
 from pydal._compat import integer_types
 from pydal import DAL, Field
 
 long = integer_types[-1]
-
-DEFAULT_URI = os.getenv('DB', 'sqlite:memory')
-NOSQL = any([name in DEFAULT_URI for name in ("datastore", "mongodb", "imap")])
-IS_IMAP = "imap" in DEFAULT_URI
 
 regex_isint = re.compile('^[+-]?\d+$')
 
@@ -24,7 +19,7 @@ def range_error_message(error_message, what_to_enter, minimum, maximum):
             error_message += ' greater than or equal to %(min)g'
         elif maximum is not None:
             error_message += ' less than or equal to %(max)g'
-    if type(maximum) in [int, long]:
+    if type(maximum) in integer_types:
         maximum -= 1
     return error_message % dict(min=minimum, max=maximum)
 
@@ -69,18 +64,24 @@ class TestValidateAndInsert(unittest.TestCase):
         #cleanup table
         drop(db.val_and_insert)
 
+
 @unittest.skipIf(IS_IMAP, "TODO: IMAP test")
 class TestValidateUpdateInsert(unittest.TestCase):
 
     def testRun(self):
         db = DAL(DEFAULT_URI, check_reserved=['all'])
-        t1 = db.define_table('t1', Field('int_level', requires=IS_INT_IN_RANGE(1, 5)))
-        i_response = t1.validate_and_update_or_insert((t1.int_level == 1), int_level=1)
-        u_response = t1.validate_and_update_or_insert((t1.int_level == 1), int_level=2)
-        e_response = t1.validate_and_update_or_insert((t1.int_level == 1), int_level=6)
-        self.assertTrue(i_response.id != None)
-        self.assertTrue(u_response.id != None)
-        self.assertTrue(e_response.id == None and len(e_response.errors.keys()) != 0)
+        t1 = db.define_table('t1', Field('int_level',
+                             requires=IS_INT_IN_RANGE(1, 5)))
+        i_response = t1.validate_and_update_or_insert((t1.int_level == 1),
+                                                      int_level=1)
+        u_response = t1.validate_and_update_or_insert((t1.int_level == 1),
+                                                      int_level=2)
+        e_response = t1.validate_and_update_or_insert((t1.int_level == 1),
+                                                      int_level=6)
+        self.assertNotEqual(i_response.id, None)
+        self.assertNotEqual(u_response.id, None)
+        self.assertTrue(e_response.id is None and
+                        len(e_response.errors.keys()) != 0)
         self.assertEqual(len(db(t1).select()), 1)
         self.assertEqual(db(t1).count(), 1)
         self.assertEqual(db(t1.int_level == 1).count(), 0)
