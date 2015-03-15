@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import print_function
 import re
 import os
 import sys
@@ -928,10 +929,14 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         if PY2:
             rv = str(rv)
         else:
-            if isinstance(rv, bytes):
-                rv = rv.decode("utf8")
-            else:
-                rv = str(rv)
+            print(expression)
+            print(rv)
+            print(type(rv))
+            #if isinstance(rv, bytes):
+            #    rv = rv.decode("utf8")
+            #else:
+            #    rv = str(rv)
+            rv = str(rv)
         return rv
 
     def table_alias(self, tbl):
