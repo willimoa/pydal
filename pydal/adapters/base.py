@@ -890,42 +890,45 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         if isinstance(expression, Field):
             et = expression.table
             if not colnames:
-                table_rname = et._ot and self.QUOTE_TEMPLATE % et._tablename or et._rname or self.QUOTE_TEMPLATE % et._tablename
-                out = '%s.%s' % (table_rname, expression._rname or (self.QUOTE_TEMPLATE % (expression.name)))
+                table_rname = et._ot and self.QUOTE_TEMPLATE % et._tablename \
+                    or et._rname or self.QUOTE_TEMPLATE % et._tablename
+                rv = '%s.%s' % (table_rname, expression._rname or
+                                (self.QUOTE_TEMPLATE % (expression.name)))
             else:
-                out = '%s.%s' % (self.QUOTE_TEMPLATE % et._tablename, self.QUOTE_TEMPLATE % expression.name)
-            if field_type == 'string' and not expression.type in (
-                'string','text','json','password'):
-                out = self.CAST(out, self.types['text'])
-            return out
+                rv = '%s.%s' % (self.QUOTE_TEMPLATE % et._tablename,
+                                self.QUOTE_TEMPLATE % expression.name)
+            if field_type == 'string' and expression.type not in (
+                    'string', 'text', 'json', 'password'):
+                rv = self.CAST(rv, self.types['text'])
         elif isinstance(expression, (Expression, Query)):
             first = expression.first
             second = expression.second
             op = expression.op
             optional_args = expression.optional_args or {}
-            if not second is None:
-                out = op(first, second, **optional_args)
-            elif not first is None:
-                out = op(first,**optional_args)
+            if second is not None:
+                rv = op(first, second, **optional_args)
+            elif first is not None:
+                rv = op(first, **optional_args)
             elif isinstance(op, str):
                 if op.endswith(';'):
-                    op=op[:-1]
-                out = '(%s)' % op
+                    op = op[:-1]
+                rv = '(%s)' % op
             else:
-                out = op()
-            return out
+                rv = op()
         elif field_type:
             rv = self.represent(expression, field_type)
-            if PY2:
-                return str(rv)
-            return rv
-        elif isinstance(expression,(list,tuple)):
-            return ','.join(self.represent(item,field_type) \
-                                for item in expression)
+        elif isinstance(expression, (list, tuple)):
+            rv = ','.join(self.represent(item, field_type)
+                          for item in expression)
         elif isinstance(expression, bool):
-            return self.db._adapter.TRUE_exp if expression else self.db._adapter.FALSE_exp
+            rv = self.db._adapter.TRUE_exp if expression else \
+                self.db._adapter.FALSE_exp
         else:
-            return str(expression)
+            rv = expression
+        if PY2:
+            return str(rv)
+        else:
+            return rv.encode("utf8")
 
     def table_alias(self, tbl):
         if not isinstance(tbl, Table):
