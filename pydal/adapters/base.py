@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function
 import re
 import os
 import sys
@@ -916,20 +915,14 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 out = op()
             return out
         elif field_type:
-            print("expanded with field_type:")
-            rtemp = self.represent(expression, field_type)
-            print(rtemp)
-            print(type(rtemp))
-            return str(self.represent(expression,field_type))
+            #return str(self.represent(expression, field_type))
+            return self.represent(expression, field_type)
         elif isinstance(expression,(list,tuple)):
             return ','.join(self.represent(item,field_type) \
                                 for item in expression)
         elif isinstance(expression, bool):
             return self.db._adapter.TRUE_exp if expression else self.db._adapter.FALSE_exp
         else:
-            print("expand final else")
-            print(expression)
-            print(type(expression))
             return str(expression)
 
     def table_alias(self, tbl):
@@ -1332,10 +1325,6 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
         return self.log_execute(*a, **b)
 
     def represent(self, obj, fieldtype):
-        print("REPRESENT()")
-        print(obj)
-        print(type(obj))
-        print(fieldtype)
         field_is_type = fieldtype.startswith
         if isinstance(obj, CALLABLETYPES):
             obj = obj()
@@ -1434,9 +1423,6 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 obj = obj.decode('utf-8')
             if not isinstance(obj, basestring):
                 obj = str(obj)
-        print("calling adapt:")
-        print(obj)
-        print(type(obj))
         return self.adapt(obj)
 
     def represent_exceptions(self, obj, fieldtype):

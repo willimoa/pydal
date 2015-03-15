@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function
 import re
 
 from .._globals import IDENTITY
@@ -48,9 +47,6 @@ class PostgreSQLAdapter(BaseAdapter):
         return varquote_aux(name, '"%s"')
 
     def adapt(self, obj):
-        print("POSTGRES adapt")
-        print(obj)
-        print(type(obj))
         if self.driver_name == 'psycopg2':
             return psycopg2_adapt(obj).getquoted()
         elif self.driver_name == 'pg8000':
