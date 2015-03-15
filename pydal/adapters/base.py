@@ -915,7 +915,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 out = op()
             return out
         elif field_type:
-            rv = str(self.represent(expression, field_type))
+            rv = self.represent(expression, field_type)
             if PY2:
                 return str(rv)
             return rv
