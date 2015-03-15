@@ -925,7 +925,7 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
                 self.db._adapter.FALSE_exp
         else:
             rv = expression
-        if PY2 or not PY2 and not isinstance(rv, bytes):
+        if PY2:
             rv = str(rv)
         else:
             if isinstance(rv, bytes):
