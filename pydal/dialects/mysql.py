@@ -56,25 +56,36 @@ class MySQLDialect(SQLDialect):
     def insert_empty(self, table):
         return 'INSERT INTO %s VALUES (DEFAULT);' % table
 
+    def delete(self, table, where=None):
+        tablename = self.writing_alias(table)
+        whr = ''
+        if where:
+            whr = ' %s' % self.where(where)
+        return 'DELETE %s FROM %s%s;' % (table.sql_shortref, tablename, whr)
+
     @property
     def random(self):
         return 'RAND()'
 
-    def substring(self, field, parameters):
+    def substring(self, field, parameters, query_env={}):
         return 'SUBSTRING(%s,%s,%s)' % (
-            self.expand(field), parameters[0], parameters[1])
+            self.expand(field, query_env=query_env), parameters[0],
+                parameters[1])
 
-    def epoch(self, first):
-        return "UNIX_TIMESTAMP(%s)" % self.expand(first)
+    def epoch(self, first, query_env={}):
+        return "UNIX_TIMESTAMP(%s)" % self.expand(first, query_env=query_env)
 
-    def concat(self, *items):
-        return 'CONCAT(%s)' % ','.join(self.expand(x, 'string') for x in items)
+    def concat(self, *items, **kwargs):
+        query_env = kwargs.get('query_env', {})
+        tmp = (self.expand(x, 'string', query_env=query_env) for x in items)
+        return 'CONCAT(%s)' % ','.join(tmp)
 
-    def regexp(self, first, second):
+    def regexp(self, first, second, query_env={}):
         return '(%s REGEXP %s)' % (
-            self.expand(first), self.expand(second, 'string'))
+            self.expand(first, query_env=query_env),
+            self.expand(second, 'string', query_env=query_env))
 
-    def cast(self, first, second):
+    def cast(self, first, second, query_env={}):
         if second == 'LONGTEXT':
             second = 'CHAR'
         return 'CAST(%s AS %s)' % (first, second)
@@ -82,8 +93,8 @@ class MySQLDialect(SQLDialect):
     def drop_table(self, table, mode):
         # breaks db integrity but without this mysql does not drop table
         return [
-            'SET FOREIGN_KEY_CHECKS=0;', 'DROP TABLE %s;' % table.sqlsafe,
+            'SET FOREIGN_KEY_CHECKS=0;', 'DROP TABLE %s;' % table._rname,
             'SET FOREIGN_KEY_CHECKS=1;']
 
     def drop_index(self, name, table):
-        return 'DROP INDEX %s ON %s;' % (self.quote(name), table.sqlsafe)
+        return 'DROP INDEX %s ON %s;' % (self.quote(name), table._rname)

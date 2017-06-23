@@ -2,16 +2,30 @@
 import copy
 import marshal
 import struct
+import threading
 import time
 import traceback
 
-from .._compat import PY2, exists, copyreg, integer_types, implements_bool, \
-    iterkeys, itervalues, iteritems
+from .._compat import (
+    PY2, exists, copyreg, implements_bool, iterkeys, itervalues, iteritems,
+    long
+)
 from .._globals import THREAD_LOCAL
 from .serializers import serializers
 
 
-long = integer_types[-1]
+class cachedprop(object):
+    #: a read-only @property that is only evaluated once.
+    def __init__(self, fget, doc=None):
+        self.fget = fget
+        self.__doc__ = doc or fget.__doc__
+        self.__name__ = fget.__name__
+
+    def __get__(self, obj, cls):
+        if obj is None:
+            return self
+        obj.__dict__[self.__name__] = result = self.fget(obj)
+        return result
 
 
 @implements_bool
@@ -78,6 +92,103 @@ def pickle_basicstorage(s):
 copyreg.pickle(BasicStorage, pickle_basicstorage)
 
 
+class OpRow(object):
+    __slots__ = ('_table', '_fields', '_values')
+
+    def __init__(self, table):
+        object.__setattr__(self, '_table', table)
+        object.__setattr__(self, '_fields', {})
+        object.__setattr__(self, '_values', {})
+
+    def set_value(self, key, value, field=None):
+        self._values[key] = value
+        self._fields[key] = self._fields.get(key, field or self._table[key])
+
+    def del_value(self, key):
+        del self._values[key]
+        del self._fields[key]
+
+    def __getitem__(self, key):
+        return self._values[key]
+
+    def __setitem__(self, key, value):
+        return self.set_value(key, value)
+
+    def __delitem__(self, key):
+        return self.del_value(key)
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError
+
+    def __setattr__(self, key, value):
+        return self.set_value(key, value)
+
+    def __delattr__(self, key):
+        return self.del_value(key)
+
+    def __iter__(self):
+        return self._values.__iter__()
+
+    def __contains__(self, key):
+        return key in self._values
+
+    def get(self, key, default=None):
+        try:
+            rv = self[key]
+        except KeyError:
+            rv = default
+        return rv
+
+    def keys(self):
+        return self._values.keys()
+
+    def iterkeys(self):
+        return iterkeys(self._values)
+
+    def values(self):
+        return self._values.values()
+
+    def itervalues(self):
+        return itervalues(self._values)
+
+    def items(self):
+        return self._values.items()
+
+    def iteritems(self):
+        return iteritems(self._values)
+
+    def op_values(self):
+        return [
+            (self._fields[key], value)
+            for key, value in iteritems(self._values)
+        ]
+
+    def __repr__(self):
+        return '<OpRow %s>' % repr(self._values)
+
+
+class ConnectionConfigurationMixin(object):
+    def _mock_reconnect(self):
+        self._reconnect_lock = threading.RLock()
+        self._connection_reconnect = self.reconnect
+        self.reconnect = self._reconnect_and_configure
+        self._reconnect_mocked = True
+
+    def _reconnect_and_configure(self):
+        self._connection_reconnect()
+        with self._reconnect_lock:
+            if self._reconnect_mocked:
+                self._configure_on_first_reconnect()
+                self.reconnect = self._connection_reconnect
+                self._reconnect_mocked = False
+
+    def _configure_on_first_reconnect(self):
+        pass
+
+
 class Serializable(object):
     def as_dict(self, flat=False, sanitize=True):
         return self.__dict__
@@ -102,14 +213,14 @@ class Reference(long):
                 "reference: %s %d" % (self._table, long(self))
             )
 
-    def __getattr__(self, key):
+    def __getattr__(self, key, default=None):
         if key == 'id':
             return long(self)
         if key in self._table:
             self.__allocate()
         if self._record:
             # to deal with case self.update_record()
-            return self._record.get(key, None)
+            return self._record.get(key, default)
         else:
             return None
 

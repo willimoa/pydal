@@ -1,3 +1,4 @@
+from .._compat import basestring
 from ..adapters.mssql import MSSQL, MSSQLN, MSSQL3, MSSQL4, MSSQL3N, MSSQL4N, \
     Vertica, Sybase
 from ..helpers.methods import varquote_aux
@@ -74,9 +75,9 @@ class MSSQLDialect(SQLDialect):
 
     @sqltype_for('reference TFK')
     def type_reference_tfk(self):
-        return ' CONSTRAINT FK_%(foreign_table)s_PK FOREIGN KEY ' + \
+        return ' CONSTRAINT FK_%(constraint_name)s_PK FOREIGN KEY ' + \
             '(%(field_name)s) REFERENCES %(foreign_table)s ' + \
-            '(%(foreign_key)s) ON DELETE %(on_delete_action)s',
+            '(%(foreign_key)s) ON DELETE %(on_delete_action)s'
 
     @sqltype_for('geometry')
     def type_geometry(self):
@@ -88,6 +89,21 @@ class MSSQLDialect(SQLDialect):
 
     def varquote(self, val):
         return varquote_aux(val, '[%s]')
+
+    def update(self, table, values, where=None):
+        tablename = self.writing_alias(table)
+        whr = ''
+        if where:
+            whr = ' %s' % self.where(where)
+        return 'UPDATE %s SET %s FROM %s%s;' % (
+            table.sql_shortref, values, tablename, whr)
+
+    def delete(self, table, where=None):
+        tablename = self.writing_alias(table)
+        whr = ''
+        if where:
+            whr = ' %s' % self.where(where)
+        return 'DELETE %s FROM %s%s;' % (table.sql_shortref, tablename, whr)
 
     def select(self, fields, tables, where=None, groupby=None, having=None,
                orderby=None, limitby=None, distinct=False, for_update=False):
@@ -112,13 +128,16 @@ class MSSQLDialect(SQLDialect):
         return 'SELECT%s %s FROM %s%s%s%s%s%s%s;' % (
             dst, fields, tables, whr, grp, order, limit, offset, upd)
 
-    def left_join(self, val):
+    def left_join(self, val, query_env={}):
+        # Left join must always have an ON clause
+        if not isinstance(val, basestring):
+            val = self.expand(val, query_env=query_env)
         return 'LEFT OUTER JOIN %s' % val
 
     def random(self):
         return 'NEWID()'
 
-    def cast(self, first, second):
+    def cast(self, first, second, query_env={}):
         # apparently no cast necessary in MSSQL
         return first
 
@@ -132,35 +151,42 @@ class MSSQLDialect(SQLDialect):
         return self._mssql_like_normalizer(
             super(MSSQLDialect, self)._like_escaper_default(term))
 
-    def concat(self, *items):
-        return '(%s)' % ' + '.join(self.expand(x, 'string') for x in items)
+    def concat(self, *items, **kwargs):
+        query_env = kwargs.get('query_env', {})
+        tmp = (self.expand(x, 'string', query_env=query_env) for x in items)
+        return '(%s)' % ' + '.join(tmp)
 
-    def regexp(self, first, second):
-        second = self.expand(second, 'string').replace('\\', '\\\\')
+    def regexp(self, first, second, query_env={}):
+        second = self.expand(second, 'string', query_env=query_env)
+        second = second.replace('\\', '\\\\')
         second = second.replace('%', '\%').replace('*', '%').replace('.', '_')
-        return "(%s LIKE %s ESCAPE '\\')" % (self.expand(first), second)
+        return "(%s LIKE %s ESCAPE '\\')" % (
+            self.expand(first, query_env=query_env), second)
 
-    def extract(self, first, what):
-        return "DATEPART(%s,%s)" % (what, self.expand(first))
+    def extract(self, first, what, query_env={}):
+        return "DATEPART(%s,%s)" % (what,
+            self.expand(first, query_env=query_env))
 
-    def epoch(self, val):
-        return "DATEDIFF(second, '1970-01-01 00:00:00', %s)" % self.expand(val)
+    def epoch(self, val, query_env={}):
+        return "DATEDIFF(second, '1970-01-01 00:00:00', %s)" % \
+            self.expand(val, query_env=query_env)
 
-    def length(self, val):
-        return "LEN(%s)" % self.expand(val)
+    def length(self, val, query_env={}):
+        return "LEN(%s)" % self.expand(val, query_env=query_env)
 
-    def aggregate(self, first, what):
+    def aggregate(self, first, what, query_env={}):
         if what == 'LENGTH':
             what = 'LEN'
-        return super(MSSQLDialect, self).aggregate(first, what)
+        return super(MSSQLDialect, self).aggregate(first, what, query_env)
 
     @property
     def allow_null(self):
         return ' NULL'
 
-    def substring(self, field, parameters):
+    def substring(self, field, parameters, query_env={}):
         return 'SUBSTRING(%s,%s,%s)' % (
-            self.expand(field), parameters[0], parameters[1])
+            self.expand(field, query_env=query_env), parameters[0],
+            parameters[1])
 
     def primary_key(self, key):
         return 'PRIMARY KEY CLUSTERED (%s)' % key
@@ -169,38 +195,45 @@ class MSSQLDialect(SQLDialect):
         return '; ALTER TABLE %s ADD ' % tablename
 
     def drop_index(self, name, table):
-        return 'DROP INDEX %s ON %s;' % (self.quote(name), table.sqlsafe)
+        return 'DROP INDEX %s ON %s;' % (self.quote(name), table._rname)
 
-    def st_astext(self, first):
-        return '%s.STAsText()' % self.expand(first)
+    def st_astext(self, first, query_env={}):
+        return '%s.STAsText()' % self.expand(first, query_env=query_env)
 
-    def st_contains(self, first, second):
+    def st_contains(self, first, second, query_env={}):
         return '%s.STContains(%s)=1' % (
-            self.expand(first), self.expand(second, first.type))
+            self.expand(first, query_env=query_env),
+            self.expand(second, first.type, query_env=query_env))
 
-    def st_distance(self, first, second):
+    def st_distance(self, first, second, query_env={}):
         return '%s.STDistance(%s)' % (
-            self.expand(first), self.expand(second, first.type))
+            self.expand(first, query_env=query_env),
+            self.expand(second, first.type, query_env=query_env))
 
-    def st_equals(self, first, second):
+    def st_equals(self, first, second, query_env={}):
         return '%s.STEquals(%s)=1' % (
-            self.expand(first), self.expand(second, first.type))
+            self.expand(first, query_env=query_env),
+            self.expand(second, first.type, query_env=query_env))
 
-    def st_intersects(self, first, second):
+    def st_intersects(self, first, second, query_env={}):
         return '%s.STIntersects(%s)=1' % (
-            self.expand(first), self.expand(second, first.type))
+            self.expand(first, query_env=query_env),
+            self.expand(second, first.type, query_env=query_env))
 
-    def st_overlaps(self, first, second):
+    def st_overlaps(self, first, second, query_env={}):
         return '%s.STOverlaps(%s)=1' % (
-            self.expand(first), self.expand(second, first.type))
+            self.expand(first, query_env=query_env),
+            self.expand(second, first.type, query_env=query_env))
 
-    def st_touches(self, first, second):
+    def st_touches(self, first, second, query_env={}):
         return '%s.STTouches(%s)=1' % (
-            self.expand(first), self.expand(second, first.type))
+            self.expand(first, query_env=query_env),
+            self.expand(second, first.type, query_env=query_env))
 
-    def st_within(self, first, second):
+    def st_within(self, first, second, query_env={}):
         return '%s.STWithin(%s)=1' % (
-            self.expand(first), self.expand(second, first.type))
+            self.expand(first, query_env=query_env),
+            self.expand(second, first.type, query_env=query_env))
 
 
 @dialects.register_for(MSSQLN)
@@ -213,18 +246,18 @@ class MSSQLNDialect(MSSQLDialect):
     def type_text(self):
         return 'NTEXT'
 
-    def ilike(self, first, second, escape=None):
+    def ilike(self, first, second, escape=None, query_env={}):
         if isinstance(second, Expression):
-            second = self.expand(second, 'string')
+            second = self.expand(second, 'string', query_env=query_env)
         else:
-            second = self.expand(second, 'string').lower()
+            second = self.expand(second, 'string', query_env=query_env).lower()
             if escape is None:
                 escape = '\\'
                 second = second.replace(escape, escape * 2)
         if second.startswith("n'"):
             second = "N'" + second[2:]
         return "(%s LIKE %s ESCAPE '%s')" % (
-            self.lower(first), second, escape)
+            self.lower(first, query_env), second, escape)
 
 
 @dialects.register_for(MSSQL3)
@@ -368,13 +401,14 @@ class VerticaDialect(MSSQLDialect):
         return 'BIGINT REFERENCES %(foreign_key)s ON DELETE' + \
             ' %(on_delete_action)s'
 
-    def extract(self, first, what):
-        return "DATE_PART('%s', TIMESTAMP %s)" % (what, self.expand(first))
+    def extract(self, first, what, query_env={}):
+        return "DATE_PART('%s', TIMESTAMP %s)" % (what,
+            self.expand(first, query_env=query_env))
 
     def truncate(self, table, mode=''):
         if mode:
             mode = " %s" % mode
-        return ['TRUNCATE %s%s;' % (table.sqlsafe, mode)]
+        return ['TRUNCATE %s%s;' % (table._rname, mode)]
 
     def select(self, *args, **kwargs):
         return SQLDialect.select(self, *args, **kwargs)

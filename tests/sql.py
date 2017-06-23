@@ -4,19 +4,18 @@
 """
 
 from __future__ import print_function
-import sys
 import os
 import glob
 import datetime
 import json
 
-from pydal._compat import PY2, basestring, StringIO, integer_types, xrange
+from pydal._compat import basestring, StringIO, integer_types, xrange
 from pydal import DAL, Field
-from pydal.helpers.classes import SQLALL
-from pydal.objects import Table
+from pydal.helpers.classes import SQLALL, OpRow
+from pydal.objects import Table, Expression, Row
 from ._compat import unittest
 from ._adapt import (
-    DEFAULT_URI, IS_POSTGRESQL, IS_SQLITE, IS_MSSQL, IS_MYSQL, IS_TERADATA, _quote)
+    DEFAULT_URI, IS_POSTGRESQL, IS_SQLITE, IS_MSSQL, IS_MYSQL, IS_TERADATA)
 from ._helpers import DALtest
 
 long = integer_types[-1]
@@ -613,6 +612,262 @@ class TestSelect(DALtest):
         self.assertEqual(result.response[0][0], 0)
         self.assertEqual(result.response[1][0], 1)
 
+    def testTableAliasCollisions(self):
+        db = self.connect()
+        db.define_table('t1', Field('aa'))
+        db.define_table('t2', Field('bb'))
+        t1, t2 = db.t1, db.t2
+        t1.with_alias('t2')
+        t2.with_alias('t1')
+
+        # Passing tables by name will result in exception
+        t1.insert(aa='test')
+        t2.insert(bb='foo')
+        db(t1.id > 0).update(aa='bar')
+        having = (t1.aa != None)
+        join = [t2.on(t1.aa == t2.bb)]
+        db(t1.aa == t2.bb).select(t1.aa, groupby=t1.aa, having=having,
+            orderby=t1.aa)
+        db(t1.aa).select(t1.aa, join=join, groupby=t1.aa, having=having,
+            orderby=t1.aa)
+        db(t1.aa).select(t1.aa, left=join, groupby=t1.aa, having=having,
+            orderby=t1.aa)
+        db(t1.id > 0).delete()
+
+
+class TestSubselect(DALtest):
+
+    def testMethods(self):
+        db = self.connect()
+        db.define_table('tt', Field('aa', 'integer'), Field('bb'))
+        data = [
+            dict(aa=1, bb='foo'), dict(aa=1, bb='bar'), dict(aa=2, bb='foo')
+        ]
+        for item in data:
+            db.tt.insert(**item)
+        fields = [db.tt.aa, db.tt.bb, db.tt.aa+2,
+            (db.tt.aa+1).with_alias('exp')]
+        sub = db(db.tt).nested_select(*fields, orderby=db.tt.id)
+        # Check the fields provided by the object
+        self.assertEqual(sorted(['aa', 'bb', 'exp']), sorted(list(sub.fields)))
+        for name in sub.fields:
+            self.assertIsInstance(sub[name], Field)
+        for item in sub:
+            self.assertIsInstance(item, Field)
+        self.assertEqual(len(list(sub)), len(sub.fields))
+        for key, val in zip(sub.fields, sub):
+            self.assertIs(sub[key], val)
+            self.assertIs(getattr(sub, key), val)
+        tmp = sub._filter_fields(dict(aa=1, exp=2, foo=3))
+        self.assertEqual(tmp, dict(aa=1, exp=2))
+        # Check result from executing the query
+        result = sub()
+        self.assertEqual(len(result), len(data))
+        for idx, row in enumerate(data):
+            self.assertEqual(result[idx]['tt'].as_dict(), row)
+            self.assertEqual(result[idx]['exp'], row['aa']+1)
+        result = db.executesql(str(sub))
+        for idx, row in enumerate(data):
+            tmp = [row['aa'], row['bb'], row['aa']+2, row['aa']+1]
+            self.assertEqual(list(result[idx]), tmp)
+        # Check that query expansion methods don't work without alias
+        self.assertEqual(sub._rname, None)
+        self.assertEqual(sub._raw_rname, None)
+        self.assertEqual(sub._dalname, None)
+        with self.assertRaises(SyntaxError):
+            sub.query_name()
+        with self.assertRaises(SyntaxError):
+            sub.sql_shortref
+        with self.assertRaises(SyntaxError):
+            sub.on(sub.aa != None)
+        # Alias checks
+        sub = sub.with_alias('foo')
+        result = sub()
+        for idx, row in enumerate(data):
+            self.assertEqual(result[idx]['tt'].as_dict(), row)
+            self.assertEqual(result[idx]['exp'], row['aa']+1)
+        # Check query expansion methods again
+        self.assertEqual(sub._rname, None)
+        self.assertEqual(sub._raw_rname, None)
+        self.assertEqual(sub._dalname, None)
+        self.assertEqual(sub.query_name()[0], str(sub))
+        self.assertEqual(sub.sql_shortref, db._adapter.dialect.quote('foo'))
+        self.assertIsInstance(sub.on(sub.aa != None), Expression)
+
+    def testSelectArguments(self):
+        db = self.connect()
+        db.define_table('tt', Field('aa', 'integer'), Field('bb'))
+        data = [
+            dict(aa=1, bb='foo'), dict(aa=1, bb='bar'), dict(aa=2, bb='foo'),
+            dict(aa=3, bb='foo'), dict(aa=3, bb='baz')
+        ]
+        expected = [(1, None, 0), (2, 2, 2), (2, 2, 2), (3, 4, 3), (3, 8, 6)]
+        for item in data:
+            db.tt.insert(**item)
+
+        # Check that select clauses work as expected in stand-alone query
+        t1 = db.tt.with_alias('t1')
+        t2 = db.tt.with_alias('t2')
+        fields = [t1.aa, t2.aa.sum().with_alias('total'),
+            t2.aa.count().with_alias('cnt')]
+        join = t1.on(db.tt.bb != t1.bb)
+        left = t2.on(t1.aa > t2.aa)
+        group = db.tt.bb | t1.aa
+        having = db.tt.aa.count() > 1
+        order = t1.aa | t2.aa.count()
+        limit = (1,6)
+        sub = db(db.tt.aa != 2).nested_select(*fields, join=join, left=left,
+            orderby=order, groupby=group, having=having, limitby=limit)
+        result = sub()
+        self.assertEqual(len(result), len(expected))
+        for idx, val in enumerate(expected):
+            self.assertEqual(result[idx]['t1']['aa'], val[0])
+            self.assertEqual(result[idx]['total'], val[1])
+            self.assertEqual(result[idx]['cnt'], val[2])
+
+        # Check again when nested inside another query
+        # Also check that the alias will not conflict with existing table
+        t3 = db.tt.with_alias('t3')
+        sub = sub.with_alias('tt')
+        query = (t3.bb == 'foo') & (t3.aa == sub.aa)
+        order = t3.aa | sub.cnt
+        result = db(query).select(t3.aa, sub.total, sub.cnt, orderby=order)
+        for idx, val in enumerate(expected):
+            self.assertEqual(result[idx]['t3']['aa'], val[0])
+            self.assertEqual(result[idx]['tt']['total'], val[1])
+            self.assertEqual(result[idx]['tt']['cnt'], val[2])
+
+        # Check "distinct" modifier separately
+        sub = db(db.tt.aa != 2).nested_select(db.tt.aa, distinct=True)
+        result = sub().as_list()
+        self.assertEqual(result, [dict(aa=1), dict(aa=3)])
+
+    def testCorrelated(self):
+        db = self.connect()
+        db.define_table('t1', Field('aa', 'integer'), Field('bb'),
+            Field('mark', 'integer'))
+        db.define_table('t2', Field('aa', 'integer'), Field('cc'))
+        db.define_table('t3', Field('aa', 'integer'))
+        data_t1 = [
+            dict(aa=1, bb='bar'), dict(aa=1, bb='foo'), dict(aa=2, bb='foo'),
+            dict(aa=2, bb='test'), dict(aa=3, bb='baz'), dict(aa=3, bb='foo')
+        ]
+        data_t2 = [
+            dict(aa=1, cc='foo'), dict(aa=2, cc='bar'), dict(aa=3, cc='baz')
+        ]
+        expected_cor = [(1, 'foo'), (3, 'baz')]
+        expected_leftcor = [(1, 'foo'), (2, None), (3, 'baz')]
+        expected_uncor = [
+            (1, 'bar'), (1, 'foo'), (2, 'foo'), (3, 'baz'), (3, 'foo')
+        ]
+        for item in data_t1:
+            db.t1.insert(**item)
+        for item in data_t2:
+            db.t2.insert(**item)
+            db.t3.insert(aa=item['aa'])
+
+        # Correlated subqueries
+        subquery = db.t1.aa == db.t2.aa
+        subfields = [db.t2.cc]
+        sub = db(subquery).nested_select(*subfields).with_alias('sub')
+        query = db.t1.bb.belongs(sub)
+        order = db.t1.aa | db.t1.bb
+        result = db(query).select(db.t1.aa, db.t1.bb, orderby=order)
+        self.assertEqual(len(result), len(expected_cor))
+        for idx, val in enumerate(expected_cor):
+            self.assertEqual(result[idx]['aa'], val[0])
+            self.assertEqual(result[idx]['bb'], val[1])
+
+        join = [db.t1.on((db.t3.aa == db.t1.aa) & db.t1.bb.belongs(sub))]
+        order = db.t3.aa | db.t1.bb
+        result = db(db.t3).select(db.t3.aa, db.t1.bb, join=join, orderby=order)
+        self.assertEqual(len(result), len(expected_cor))
+        for idx, val in enumerate(expected_cor):
+            self.assertEqual(result[idx]['t3']['aa'], val[0])
+            self.assertEqual(result[idx]['t1']['bb'], val[1])
+
+        left = [db.t1.on((db.t3.aa == db.t1.aa) & db.t1.bb.belongs(sub))]
+        result = db(db.t3).select(db.t3.aa, db.t1.bb, left=left, orderby=order)
+        self.assertEqual(len(result), len(expected_leftcor))
+        for idx, val in enumerate(expected_leftcor):
+            self.assertEqual(result[idx]['t3']['aa'], val[0])
+            self.assertEqual(result[idx]['t1']['bb'], val[1])
+
+        order = db.t1.aa | db.t1.bb
+        db(db.t1.bb.belongs(sub)).update(mark=1)
+        result = db(db.t1.mark == 1).select(db.t1.aa, db.t1.bb, orderby=order)
+        self.assertEqual(len(result), len(expected_cor))
+        for idx, val in enumerate(expected_cor):
+            self.assertEqual(result[idx]['aa'], val[0])
+            self.assertEqual(result[idx]['bb'], val[1])
+
+        db(~db.t1.bb.belongs(sub)).delete()
+        result = db(db.t1.id > 0).select(db.t1.aa, db.t1.bb, orderby=order)
+        self.assertEqual(len(result), len(expected_cor))
+        for idx, val in enumerate(expected_cor):
+            self.assertEqual(result[idx]['aa'], val[0])
+            self.assertEqual(result[idx]['bb'], val[1])
+
+        db(db.t1.id > 0).delete()
+        for item in data_t1:
+            db.t1.insert(**item)
+
+        # Uncorrelated subqueries
+        kwargs = dict(correlated=False)
+        sub = db(subquery).nested_select(*subfields, **kwargs)
+        query = db.t1.bb.belongs(sub)
+        order = db.t1.aa | db.t1.bb
+        result = db(query).select(db.t1.aa, db.t1.bb, orderby=order)
+        self.assertEqual(len(result), len(expected_uncor))
+        for idx, val in enumerate(expected_uncor):
+            self.assertEqual(result[idx]['aa'], val[0])
+            self.assertEqual(result[idx]['bb'], val[1])
+
+        join = [db.t1.on((db.t3.aa == db.t1.aa) & db.t1.bb.belongs(sub))]
+        order = db.t3.aa | db.t1.bb
+        result = db(db.t3).select(db.t3.aa, db.t1.bb, join=join, orderby=order)
+        self.assertEqual(len(result), len(expected_uncor))
+        for idx, val in enumerate(expected_uncor):
+            self.assertEqual(result[idx]['t3']['aa'], val[0])
+            self.assertEqual(result[idx]['t1']['bb'], val[1])
+
+        left = [db.t1.on((db.t3.aa == db.t1.aa) & db.t1.bb.belongs(sub))]
+        result = db(db.t3).select(db.t3.aa, db.t1.bb, left=left, orderby=order)
+        self.assertEqual(len(result), len(expected_uncor))
+        for idx, val in enumerate(expected_uncor):
+            self.assertEqual(result[idx]['t3']['aa'], val[0])
+            self.assertEqual(result[idx]['t1']['bb'], val[1])
+        # MySQL does not support subqueries with uncorrelated references
+        # to target table
+
+        # Correlation prevented by alias in parent select
+        tmp = db.t1.with_alias('tmp')
+        sub = db(subquery).nested_select(*subfields)
+        query = tmp.bb.belongs(sub)
+        order = tmp.aa | tmp.bb
+        result = db(query).select(tmp.aa, tmp.bb, orderby=order)
+        self.assertEqual(len(result), len(expected_uncor))
+        for idx, val in enumerate(expected_uncor):
+            self.assertEqual(result[idx]['aa'], val[0])
+            self.assertEqual(result[idx]['bb'], val[1])
+
+        join = [tmp.on((db.t3.aa == tmp.aa) & tmp.bb.belongs(sub))]
+        order = db.t3.aa | tmp.bb
+        result = db(db.t3).select(db.t3.aa, tmp.bb, join=join, orderby=order)
+        self.assertEqual(len(result), len(expected_uncor))
+        for idx, val in enumerate(expected_uncor):
+            self.assertEqual(result[idx]['t3']['aa'], val[0])
+            self.assertEqual(result[idx]['tmp']['bb'], val[1])
+
+        left = [tmp.on((db.t3.aa == tmp.aa) & tmp.bb.belongs(sub))]
+        result = db(db.t3).select(db.t3.aa, tmp.bb, left=left, orderby=order)
+        self.assertEqual(len(result), len(expected_uncor))
+        for idx, val in enumerate(expected_uncor):
+            self.assertEqual(result[idx]['t3']['aa'], val[0])
+            self.assertEqual(result[idx]['tmp']['bb'], val[1])
+        # SQLite does not support aliasing target table in UPDATE/DELETE
+        # MySQL does not support subqueries with uncorrelated references
+        # to target table
 
 class TestAddMethod(DALtest):
 
@@ -628,7 +883,7 @@ class TestAddMethod(DALtest):
             self.assertEqual(db.tt.insert(aa='1'), 3)
         else:
             self.assertEqual(db.tt.insert(aa='1'), 1)
-            self.assertEqual(db.tt.insert(aa='1'), 1)            
+            self.assertEqual(db.tt.insert(aa='1'), 1)
         self.assertEqual(len(db.tt.all()), 3)
 
 
@@ -643,7 +898,7 @@ class TestBelongs(DALtest):
             self.assertEqual(db.tt.insert(aa='3'), 3)
         else:
             self.assertEqual(db.tt.insert(aa='2'), 1)
-            self.assertEqual(db.tt.insert(aa='3'), 1)   
+            self.assertEqual(db.tt.insert(aa='3'), 1)
         self.assertEqual(db(db.tt.aa.belongs(('1', '3'))).count(),
                          2)
         self.assertEqual(db(db.tt.aa.belongs(db(db.tt.id
@@ -1034,6 +1289,59 @@ class TestExpressions(DALtest):
         #self.assertEqual(db(t0).select(op).first()[op], 2)
 
 
+class TestTableAliasing(DALtest):
+
+    def testRun(self):
+        db = self.connect()
+        db.define_table('t1', Field('aa'))
+        db.define_table('t2',
+            Field('pk', type='id', unique=True, notnull=True),
+            Field('bb', type='integer'), rname='tt')
+        tab1 = db.t1.with_alias('test1')
+        tab2 = db.t2.with_alias('test2')
+        self.assertIs(tab2.id, tab2.pk)
+        self.assertIs(tab2._id, tab2.pk)
+        self.assertEqual(tab1._dalname, 't1')
+        self.assertEqual(tab1._tablename, 'test1')
+        self.assertEqual(tab2._dalname, 't2')
+        self.assertEqual(tab2._tablename, 'test2')
+        self.assertEqual(tab2._rname, 'tt')
+        tab1.insert(aa='foo')
+        tab1.insert(aa='bar')
+        result = db(tab1).select(tab1.aa, orderby=tab1.aa)
+        self.assertEqual(result.as_list(), [{'aa': 'bar'}, {'aa': 'foo'}])
+
+        if not IS_SQLITE:
+            db(tab1.aa == 'foo').update(aa='baz')
+            result = db(tab1).select(tab1.aa, orderby=tab1.aa)
+            self.assertEqual(result.as_list(), [{'aa': 'bar'}, {'aa': 'baz'}])
+            db(tab1.aa == 'bar').delete()
+            result = db(tab1).select(tab1.aa, orderby=tab1.aa)
+            self.assertEqual(result.as_list(), [{'aa': 'baz'}])
+        else:
+            with self.assertRaises(SyntaxError):
+                db(tab1.aa == 'foo').update(aa='baz')
+            with self.assertRaises(SyntaxError):
+                db(tab1.aa == 'bar').delete()
+
+        tab2.insert(bb=123)
+        tab2.insert(bb=456)
+        result = db(tab2).select(tab2.bb, orderby=tab2.bb)
+        self.assertEqual(result.as_list(), [{'bb': 123}, {'bb': 456}])
+
+        if not IS_SQLITE:
+            db(tab2.bb == 456).update(bb=789)
+            result = db(tab2).select(tab2.bb, orderby=tab2.bb)
+            self.assertEqual(result.as_list(), [{'bb': 123}, {'bb': 789}])
+            db(tab2.bb == 123).delete()
+            result = db(tab2).select(tab2.bb, orderby=tab2.bb)
+            self.assertEqual(result.as_list(), [{'bb': 789}])
+        else:
+            with self.assertRaises(SyntaxError):
+                db(tab2.bb == 456).update(bb=789)
+            with self.assertRaises(SyntaxError):
+                db(tab2.bb == 123).delete()
+
 class TestJoin(DALtest):
 
     def testRun(self):
@@ -1128,30 +1436,150 @@ class TestMigrations(unittest.TestCase):
 
     def testRun(self):
         db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('tt', Field('aa'), Field('BB'),
+                        migrate='.storage.table')
+        db.define_table('t1', Field('aa'), Field('BB'),
+                        migrate='.storage.rname', rname='foo')
+        db.commit()
+        db.close()
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
         db.define_table('tt', Field('aa'), migrate='.storage.table')
+        db.define_table('t1', Field('aa'), migrate='.storage.rname',
+                        rname='foo')
         db.commit()
         db.close()
         db = DAL(DEFAULT_URI, check_reserved=['all'])
         db.define_table('tt', Field('aa'), Field('b'),
                         migrate='.storage.table')
+        db.define_table('t1', Field('aa'), Field('b'),
+                        migrate='.storage.rname', rname='foo')
         db.commit()
         db.close()
         db = DAL(DEFAULT_URI, check_reserved=['all'])
         db.define_table('tt', Field('aa'), Field('b', 'text'),
                         migrate='.storage.table')
+        db.define_table('t1', Field('aa'), Field('b', 'text'),
+                        migrate='.storage.rname', rname='foo')
         db.commit()
         db.close()
         db = DAL(DEFAULT_URI, check_reserved=['all'])
         db.define_table('tt', Field('aa'), migrate='.storage.table')
+        db.define_table('t1', Field('aa'), migrate='.storage.rname',
+                        rname='foo')
         db.tt.drop()
+        db.t1.drop()
         db.commit()
         db.close()
+
+    def testFieldRName(self):
+        def checkWrite(db, table, data):
+            rowid = table.insert(**data)
+            query = (table._id == rowid)
+            fields = [table[x] for x in data.keys()]
+            row = db(query).select(*fields).first()
+            self.assertIsNot(row, None)
+            self.assertEqual(row.as_dict(), data)
+            db(query).delete()
+
+        # Create tables
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('tt', Field('aa', rname='faa'),
+            Field('BB', rname='fbb'), migrate='.storage.table')
+        db.define_table('t1', Field('aa', rname='faa'),
+            Field('BB', rname='fbb'), migrate='.storage.rname', rname='foo')
+        data = dict(aa='aa1', BB='BB1')
+        checkWrite(db, db.tt, data)
+        checkWrite(db, db.t1, data)
+        db.commit()
+        db.close()
+
+        # Drop field defined by CREATE TABLE
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('tt', Field('aa', rname='faa'),
+            migrate='.storage.table')
+        db.define_table('t1', Field('aa', rname='faa'),
+            migrate='.storage.rname', rname='foo')
+        data = dict(aa='aa2')
+        checkWrite(db, db.tt, data)
+        checkWrite(db, db.t1, data)
+        db.commit()
+        db.close()
+
+        # Add new field
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('tt', Field('aa', rname='faa'), Field('b', rname='fb'),
+            migrate='.storage.table')
+        db.define_table('t1', Field('aa', rname='faa'), Field('b', rname='fb'),
+            migrate='.storage.rname', rname='foo')
+        data = dict(aa='aa3', b='b3')
+        integrity = dict(aa='data', b='integrity')
+        checkWrite(db, db.tt, data)
+        checkWrite(db, db.t1, data)
+        db.tt.insert(**integrity)
+        db.t1.insert(**integrity)
+        db.commit()
+        db.close()
+
+        # Change field type
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('tt', Field('aa', rname='faa'),
+            Field('b', 'text', rname='fb'), migrate='.storage.table')
+        db.define_table('t1', Field('aa', rname='faa'),
+            Field('b', 'text', rname='fb'), migrate='.storage.rname',
+            rname='foo')
+        data = dict(aa='aa4', b='b4')
+        checkWrite(db, db.tt, data)
+        checkWrite(db, db.t1, data)
+        row = db(db.tt).select(*[db.tt[x] for x in integrity.keys()]).first()
+        self.assertIsNot(row, None)
+        self.assertEqual(row.as_dict(), integrity)
+        row2 = db(db.t1).select(*[db.t1[x] for x in integrity.keys()]).first()
+        self.assertIsNot(row2, None)
+        self.assertEqual(row2.as_dict(), integrity)
+        db.commit()
+        db.close()
+
+        # Change field rname
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('tt', Field('aa', rname='faa'),
+            Field('b', 'text', rname='xb'), migrate='.storage.table')
+        db.define_table('t1', Field('aa', rname='faa'),
+            Field('b', 'text', rname='xb'), migrate='.storage.rname',
+            rname='foo')
+        data = dict(aa='aa4', b='b4')
+        checkWrite(db, db.tt, data)
+        checkWrite(db, db.t1, data)
+        row = db(db.tt).select(*[db.tt[x] for x in integrity.keys()]).first()
+        self.assertIsNot(row, None)
+        self.assertEqual(row.as_dict(), integrity)
+        row2 = db(db.t1).select(*[db.t1[x] for x in integrity.keys()]).first()
+        self.assertIsNot(row2, None)
+        self.assertEqual(row2.as_dict(), integrity)
+        db.commit()
+        db.close()
+
+        # Drop field defined by ALTER TABLE
+        db = DAL(DEFAULT_URI, check_reserved=['all'])
+        db.define_table('tt', Field('aa', rname='faa'),
+            migrate='.storage.table')
+        db.define_table('t1', Field('aa', rname='faa'),
+            migrate='.storage.rname', rname='foo')
+        data = dict(aa='aa5')
+        checkWrite(db, db.tt, data)
+        checkWrite(db, db.t1, data)
+        db.tt.drop()
+        db.t1.drop()
+        db.commit()
+        db.close()
+
 
     def tearDown(self):
         if os.path.exists('.storage.db'):
             os.unlink('.storage.db')
         if os.path.exists('.storage.table'):
             os.unlink('.storage.table')
+        if os.path.exists('.storage.rname'):
+            os.unlink('.storage.rname')
 
 
 class TestReference(DALtest):
@@ -1204,9 +1632,10 @@ class TestClientLevelOps(DALtest):
 
     def testRun(self):
         db = self.connect()
-        db.define_table('tt', Field('aa'))
+        db.define_table('tt', Field('aa', represent=lambda x,r:'x'+x),
+            Field('bb', type='integer', represent=lambda x,r:'y'+str(x)))
         db.commit()
-        db.tt.insert(aa="test")
+        db.tt.insert(aa="test", bb=1)
         rows1 = db(db.tt.id<0).select()
         rows2 = db(db.tt.id>0).select()
         self.assertNotEqual(rows1, rows2)
@@ -1224,13 +1653,29 @@ class TestClientLevelOps(DALtest):
         rows7 = rows5.sort(lambda row: row.aa)
         self.assertEqual(len(rows7), 1)
         def represent(f, v, r):
-            return str(v)
+            return 'z' + str(v)
 
         db.representers = {
             'rows_render': represent,
         }
+        db.tt.insert(aa="foo", bb=2)
         rows = db(db.tt.id>0).select()
-        rows.render(i=0)
+        exp1 = [Row(aa='ztest', bb='z1', id=rows[0]['id']),
+            Row(aa='zfoo', bb='z2', id=rows[1]['id'])]
+        exp2 = [Row(aa='ztest', bb=1, id=rows[0]['id']),
+            Row(aa='zfoo', bb=2, id=rows[1]['id'])]
+        exp3 = [Row(aa='test', bb='z1', id=rows[0]['id']),
+            Row(aa='foo', bb='z2', id=rows[1]['id'])]
+        self.assertEqual(rows.render(i=0), exp1[0])
+        self.assertEqual(rows.render(i=0, fields=[db.tt.aa, db.tt.bb]),
+            exp1[0])
+        self.assertEqual(rows.render(i=0, fields=[db.tt.aa]), exp2[0])
+        self.assertEqual(rows.render(i=0, fields=[db.tt.bb]), exp3[0])
+        self.assertEqual(list(rows.render()), exp1)
+        self.assertEqual(list(rows.render(fields=[db.tt.aa, db.tt.bb])), exp1)
+        self.assertEqual(list(rows.render(fields=[db.tt.aa])), exp2)
+        self.assertEqual(list(rows.render(fields=[db.tt.bb])), exp3)
+        ret = rows.render(i=0)
         rows = db(db.tt.id>0).select()
         rows.compact=False
         row = rows[0]
@@ -1538,7 +1983,7 @@ class TestRNameTable(DALtest):
 
     def testSelect(self):
         db = self.connect()
-        rname = _quote(db, 'a very complicated tablename')
+        rname = 'a_very_complicated_tablename'
         db.define_table(
             'easy_name',
             Field('a_field'),
@@ -1567,14 +2012,14 @@ class TestRNameTable(DALtest):
         avg = db.easy_name.id.avg()
         rtn = db(db.easy_name.id > 0).select(avg)
         self.assertEqual(rtn[0][avg], 3)
-        rname = _quote(db, 'this is the person table')
+        rname = 'this_is_the_person_table'
         db.define_table(
             'person',
             Field('name', default="Michael"),
             Field('uuid'),
             rname=rname
             )
-        rname = _quote(db, 'this is the pet table')
+        rname = 'this_is_the_pet_table'
         db.define_table(
             'pet',
             Field('friend','reference person'),
@@ -1647,7 +2092,7 @@ class TestRNameTable(DALtest):
             for key in ['reference','reference FK']:
                 db._adapter.types[key]=db._adapter.types[key].replace(
                 '%(on_delete_action)s','NO ACTION')
-        rname = _quote(db, 'the cubs')
+        rname = 'the_cubs'
         db.define_table('pet_farm',
             Field('name'),
             Field('father','reference pet_farm'),
@@ -1684,8 +2129,8 @@ class TestRNameTable(DALtest):
 
     def testJoin(self):
         db = self.connect()
-        rname = _quote(db, 'this is table t1')
-        rname2 = _quote(db, 'this is table t2')
+        rname = 'this_is_table_t1'
+        rname2 = 'this_is_table_t2'
         db.define_table('t1', Field('aa'), rname=rname)
         db.define_table('t2', Field('aa'), Field('b', db.t1), rname=rname2)
         i1 = db.t1.insert(aa='1')
@@ -1754,8 +2199,8 @@ class TestRNameFields(DALtest):
     # tests for highly experimental rname attribute
     def testSelect(self):
         db = self.connect()
-        rname = _quote(db, 'a very complicated fieldname')
-        rname2 = _quote(db, 'rrating from 1 to 10')
+        rname = 'a_very_complicated_fieldname'
+        rname2 = 'rrating_from_1_to_10'
         db.define_table(
             'easy_name',
             Field('a_field', rname=rname),
@@ -1789,13 +2234,14 @@ class TestRNameFields(DALtest):
         rtn = db(db.easy_name.id > 0).select(avg)
         self.assertEqual(rtn[0][avg], 2)
 
-        rname = _quote(db, 'this is the person name')
+        rname = 'this_is_the_person_name'
         db.define_table(
             'person',
+            Field('id', type='id', rname='fooid'),
             Field('name', default="Michael", rname=rname),
             Field('uuid')
             )
-        rname = _quote(db, 'this is the pet name')
+        rname = 'this_is_the_pet_name'
         db.define_table(
             'pet',
             Field('friend','reference person'),
@@ -1862,7 +2308,7 @@ class TestRNameFields(DALtest):
         self.assertEqual(rtn[2].pet.name, 'Gertie')
 
         #aliases
-        rname = _quote(db, 'the cub name')
+        rname = 'the_cub_name'
         if DEFAULT_URI.startswith('mssql'):
             #multiple cascade gotcha
             for key in ['reference','reference FK']:
@@ -1903,7 +2349,7 @@ class TestRNameFields(DALtest):
 
     def testRun(self):
         db = self.connect()
-        rname = _quote(db, 'a very complicated fieldname')
+        rname = 'a_very_complicated_fieldname'
         for ft in ['string', 'text', 'password', 'upload', 'blob']:
             db.define_table('tt', Field('aa', ft, default='', rname=rname))
             self.assertEqual(db.tt.insert(aa='x'), 1)
@@ -1976,7 +2422,7 @@ class TestRNameFields(DALtest):
 
     def testInsert(self):
         db = self.connect()
-        rname = _quote(db, 'a very complicated fieldname')
+        rname = 'a_very_complicated_fieldname'
         db.define_table('tt', Field('aa', rname=rname))
         self.assertEqual(db.tt.insert(aa='1'), 1)
         self.assertEqual(db.tt.insert(aa='1'), 2)
@@ -1991,8 +2437,8 @@ class TestRNameFields(DALtest):
 
     def testJoin(self):
         db = self.connect()
-        rname = _quote(db, 'this is field aa')
-        rname2 = _quote(db, 'this is field b')
+        rname = 'this_is_field_aa'
+        rname2 = 'this_is_field_b'
         db.define_table('t1', Field('aa', rname=rname))
         db.define_table('t2', Field('aa', rname=rname), Field('b', db.t1, rname=rname2))
         i1 = db.t1.insert(aa='1')
@@ -2055,6 +2501,28 @@ class TestRNameFields(DALtest):
         self.assertEqual(row['person.name'],'max')
         db.dog.drop()
         self.assertEqual(len(db.person._referenced_by),0)
+
+    def testTFK(self):
+        db = self.connect()
+        if 'reference TFK' not in db._adapter.types:
+            self.skipTest('Adapter does not support TFK references')
+        db.define_table('t1',
+            Field('id1', type='string', length=1, rname='foo1'),
+            Field('id2', type='integer', rname='foo2'),
+            Field('val', type='integer'),
+            primarykey=['id1', 'id2'])
+        db.define_table('t2',
+            Field('ref1', type=db.t1.id1, rname='bar1'),
+            Field('ref2', type=db.t1.id2, rname='bar2'))
+        db.t1.insert(id1='a', id2=1, val=10)
+        db.t1.insert(id1='a', id2=2, val=30)
+        db.t2.insert(ref1='a', ref2=1)
+        query = (db.t1.id1 == db.t2.ref1) & (db.t1.id2 == db.t2.ref2)
+        result = db(query).select(db.t1.ALL)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['id1'], 'a')
+        self.assertEqual(result[0]['id2'], 1)
+        self.assertEqual(result[0]['val'], 10)
 
 
 class TestQuoting(DALtest):
@@ -2202,7 +2670,8 @@ class TestGis(DALtest):
         if not IS_POSTGRESQL: return
         for b in [True, False]:
             db = DAL(DEFAULT_URI, check_reserved=['all'], ignore_field_case=b)
-            t0 = db.define_table('t0', Field('Point', 'geometry()'))
+            t0 = db.define_table('t0', Field('Point', 'geometry()'),
+                Field('rname_point', 'geometry()', rname='foo'))
             db.commit()
             db.close()
             db = DAL(DEFAULT_URI, check_reserved=['all'], ignore_field_case=b)
@@ -2324,7 +2793,7 @@ class TestBulkInsert(DALtest):
         global ctr
         ctr = 0
         def test_after_insert(i, r):
-            self.assertIsInstance(i, dict)
+            self.assertIsInstance(i, OpRow)
             global ctr
             ctr += 1
             return True

@@ -1,6 +1,34 @@
 pydal changelog
 ===============
 
+Version 17.03
+-------------
+
+Released on March 9th 2017
+
+- Various bugfixes
+- Re-introduced some backward compatibilties dropped with 17.01
+- Added python 3.6 support
+
+
+Version 17.01
+-------------
+
+Released on January 31st 2017
+
+- Several bugfixes
+- Introduced "joinable" sub-selects
+- Values are now kept between callbacks
+
+
+Version 16.11
+-------------
+
+Released on November 11th 2016
+
+- Avoid possible memory leaks on DAL instance deletion
+
+
 Version 16.09
 -------------
 

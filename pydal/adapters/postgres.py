@@ -2,6 +2,7 @@ import re
 from .._compat import PY2, with_metaclass, iterkeys, to_unicode, long
 from .._globals import IDENTITY, THREAD_LOCAL
 from ..drivers import psycopg2_adapt
+from ..helpers.classes import ConnectionConfigurationMixin
 from .base import SQLAdapter
 from . import AdapterMeta, adapters, with_connection, with_connection_or_raise
 
@@ -25,7 +26,9 @@ class PostgreMeta(AdapterMeta):
 
 
 @adapters.register_for('postgres')
-class Postgre(with_metaclass(PostgreMeta, SQLAdapter)):
+class Postgre(
+    with_metaclass(PostgreMeta, ConnectionConfigurationMixin, SQLAdapter)
+):
     dbengine = 'postgres'
     drivers = ('psycopg2', 'pg8000')
     support_distributed_transaction = True
@@ -78,6 +81,7 @@ class Postgre(with_metaclass(PostgreMeta, SQLAdapter)):
         else:
             self.__version__ = None
         THREAD_LOCAL._pydal_last_insert_ = None
+        self._mock_reconnect()
 
     def _get_json_dialect(self):
         from ..dialects.postgre import PostgreDialectJSON
@@ -101,6 +105,8 @@ class Postgre(with_metaclass(PostgreMeta, SQLAdapter)):
     def after_connection(self):
         self.execute("SET CLIENT_ENCODING TO 'UTF8'")
         self.execute("SET standard_conforming_strings=on;")
+
+    def _configure_on_first_reconnect(self):
         self._config_json()
 
     def lastrowid(self, table):
@@ -116,13 +122,13 @@ class Postgre(with_metaclass(PostgreMeta, SQLAdapter)):
             retval = None
             if hasattr(table, '_id'):
                 self._last_insert = (table._id, 1)
-                retval = table._id.name
+                retval = table._id._rname
             return self.dialect.insert(
-                table.sqlsafe,
-                ','.join(el[0].sqlsafe_name for el in fields),
+                table._rname,
+                ','.join(el[0]._rname for el in fields),
                 ','.join(self.expand(v, f.type) for f, v in fields),
                 retval)
-        return self.dialect.insert_empty(table.sqlsafe)
+        return self.dialect.insert_empty(table._rname)
 
     @with_connection
     def prepare(self, key):
@@ -260,6 +266,7 @@ class JDBCPostgre(Postgre):
         else:
             self.__version__ = None
         THREAD_LOCAL._pydal_last_insert_ = None
+        self._mock_reconnect()
 
     def connector(self):
         return self.driver.connect(*self.dsn, **self.driver_args)
@@ -268,7 +275,6 @@ class JDBCPostgre(Postgre):
         self.connection.set_client_encoding('UTF8')
         self.execute('BEGIN;')
         self.execute("SET CLIENT_ENCODING TO 'UNICODE';")
-        self._config_json()
 
     def _config_json(self):
         use_json = self.connection.dbversion >= "9.2.0"

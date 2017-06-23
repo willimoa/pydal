@@ -58,22 +58,25 @@ class FireBirdDialect(SQLDialect):
         return 'DEFAULT %s NOT NULL' % \
             self.adapter.represent(default, field_type)
 
-    def epoch(self, val):
-        return "DATEDIFF(second, '1970-01-01 00:00:00', %s)" % self.expand(val)
+    def epoch(self, val, query_env={}):
+        return "DATEDIFF(second, '1970-01-01 00:00:00', %s)" % \
+            self.expand(val, query_env=query_env)
 
-    def substring(self, field, parameters):
+    def substring(self, field, parameters, query_env={}):
         return 'SUBSTRING(%s from %s for %s)' % (
-            self.expand(field), parameters[0], parameters[1])
+            self.expand(field, query_env=query_env), parameters[0],
+            parameters[1])
 
-    def length(self, val):
-        return "CHAR_LENGTH(%s)" % self.expand(val)
+    def length(self, val, query_env={}):
+        return "CHAR_LENGTH(%s)" % self.expand(val, query_env=query_env)
 
-    def contains(self, first, second, case_sensitive=True):
+    def contains(self, first, second, case_sensitive=True, query_env={}):
         if first.type.startswith('list:'):
             second = Expression(None, self.concat('|', Expression(
-                None, self.replace(second, ('|', '||'))), '|'))
+                None, self.replace(second, ('|', '||'), query_env)), '|'))
         return '(%s CONTAINING %s)' % (
-            self.expand(first), self.expand(second, 'string'))
+            self.expand(first, query_env=query_env),
+            self.expand(second, 'string', query_env=query_env))
 
     def select(self, fields, tables, where=None, groupby=None, having=None,
                orderby=None, limitby=None, distinct=False, for_update=False):
@@ -102,10 +105,10 @@ class FireBirdDialect(SQLDialect):
     def drop_table(self, table, mode):
         sequence_name = table._sequence_name
         return [
-            'DROP TABLE %s %s;' % (table.sqlsafe, mode),
+            'DROP TABLE %s %s;' % (table._rname, mode),
             'DROP GENERATOR %s;' % sequence_name]
 
     def truncate(self, table, mode=''):
         return [
-            'DELETE FROM %s;' % table._tablename,
+            'DELETE FROM %s;' % table._rname,
             'SET GENERATOR %s TO 0;' % table._sequence_name]
