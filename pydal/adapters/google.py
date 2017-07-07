@@ -41,8 +41,8 @@ class GoogleSQL(MySQL):
         super(GoogleSQL, self).__init__(*args, **kwargs)
         self.migrator = GoogleMigrator(self)
 
-    def _find_work_folder(self):
-        super(GoogleSQL)._find_work_folder()
+    def _find_work_folder(self):        
+        super(GoogleSQL, self)._find_work_folder()
         if os.path.isabs(self.folder) and self.folder.startswith(os.getcwd()):
             self.folder = os.path.relpath(self.folder, os.getcwd())
 
@@ -95,21 +95,20 @@ class GoogleSQL(MySQL):
             lambda key: key.kind() not in entities)
 
 
-@adapters.register_for('google:mysql')
+# based on this: https://cloud.google.com/appengine/docs/standard/python/cloud-sql/
+@adapters.register_for('google:MySQLdb')
 class GoogleMySQL(MySQL):
     uploads_in_blob = True
+    drivers = ('MySQLdb',)
 
     def __init__(self, *args, **kwargs):
         super(GoogleMySQL, self).__init__(*args, **kwargs)
         self.migrator = GoogleMigrator(self)
 
     def _find_work_folder(self):
-        super(GoogleMySQL)._find_work_folder()
+        super(GoogleMySQL, self)._find_work_folder()
         if os.path.isabs(self.folder) and self.folder.startswith(os.getcwd()):
             self.folder = os.path.relpath(self.folder, os.getcwd())
-
-    def find_driver(self):
-        self.driver = "pymysql"
 
     def clear_cache(self):
         ndb.get_context().clear_cache()
@@ -119,16 +118,17 @@ class GoogleMySQL(MySQL):
         ndb.get_context().set_cache_policy(
             lambda key: key.kind() not in entities)
 
-@adapters.register_for('google:postgres')
+@adapters.register_for('google:psycopg2')
 class GooglePostgres(PostgrePsyco):
     uploads_in_blob = True
+    drivers = ('psycopg2',)
 
     def __init__(self, *args, **kwargs):
         super(GooglePostgres, self).__init__(*args, **kwargs)
         self.migrator = GoogleMigrator(self)
 
     def _find_work_folder(self):
-        super(GooglePostgres)._find_work_folder()
+        super(GooglePostgres, self)._find_work_folder()
         if os.path.isabs(self.folder) and self.folder.startswith(os.getcwd()):
             self.folder = os.path.relpath(self.folder, os.getcwd())
 
@@ -343,7 +343,7 @@ class GoogleDatastore(NoSQLAdapter):
             items = tableobj.query(default_options=qo)
         elif getattr(filters, 'filter_all', None):
             items = []
-        elif (getattr(filters, '_FilterNode__value') and
+        elif (getattr(filters, '_FilterNode__value', None) and
               getattr(filters, '_FilterNode__name', None) == '__key__' and
               getattr(filters, '_FilterNode__opsymbol', None) == '='):
             item = ndb.Key.from_old_key(getattr(filters, '_FilterNode__value')).get()
