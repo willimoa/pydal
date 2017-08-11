@@ -37,7 +37,7 @@ class Oracle(SQLAdapter):
         command = self.filter_sql_command(args[0])
         i = 1
         while True:
-            m = self.oracle_fix.match(command)
+            m = self.cmd_fix.match(command)
             if not m:
                 break
             command = command[:m.start('clob')] + str(i) + \
@@ -73,6 +73,10 @@ class Oracle(SQLAdapter):
             sequence_name=sequence_name,
             id=id_name)
         )
+
+    def _select_aux_execute(self, sql):
+        self.execute(sql)
+        return self.fetchall()
 
     def fetchall(self):
         from ..drivers import cx_Oracle
