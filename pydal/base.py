@@ -129,6 +129,7 @@ import socket
 import threading
 import time
 import traceback
+import urllib
 from uuid import uuid4
 
 from ._compat import PY2, pickle, hashlib_md5, pjoin, copyreg, integer_types, \
@@ -400,7 +401,7 @@ class DAL(with_metaclass(MetaDAL, Serializable, BasicStorage)):
         if not decode_credentials:
             credential_decoder = lambda cred: cred
         else:
-            credential_decoder = lambda cred: urllib.unquote(cred)
+            credential_decoder = lambda cred: unquote(cred)
         self._folder = folder
         if folder:
             self.set_folder(folder)

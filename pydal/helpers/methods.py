@@ -10,6 +10,7 @@ from .._compat import (
 from .regex import REGEX_NOPASSWD, REGEX_UNPACK, REGEX_CONST_STRING, REGEX_W
 from .classes import SQLCustomType
 
+UNIT_SEPARATOR = '\x1f' # ASCII unit separater for delimiting data
 
 PLURALIZE_RULES = [
     (re.compile('child$'), re.compile('child$'), 'children'),
@@ -86,14 +87,20 @@ def merge_tablemaps(*maplist):
         ret = big
     return ret
 
-
 def bar_escape(item):
-    return str(item).replace('|', '||')
+    item = str(item).replace('|', '||')
+    if item.startswith('||'): item='%s%s' % (UNIT_SEPARATOR, item)
+    if item.endswith('||'): item='%s%s' % (item, UNIT_SEPARATOR)
+    return item
 
+def bar_unescape(item):
+    item = item.replace('||','|')
+    if item.startswith(UNIT_SEPARATOR): item = item[1:]
+    if item.endswith(UNIT_SEPARATOR): item = item[:-1]
+    return item
 
 def bar_encode(items):
     return '|%s|' % '|'.join(bar_escape(item) for item in items if str(item).strip())
-
 
 def bar_decode_integer(value):
     long = integer_types[-1]
@@ -101,11 +108,8 @@ def bar_decode_integer(value):
         value = value.read()
     return [long(x) for x in value.split('|') if x.strip()]
 
-
 def bar_decode_string(value):
-    return [x.replace('||', '|') for x in
-            REGEX_UNPACK.split(value[1:-1]) if x.strip()]
-
+    return [bar_unescape(x) for x in REGEX_UNPACK.split(value[1:-1]) if x.strip()]
 
 def archive_record(qset, fs, archive_table, current_record):
     tablenames = qset.db._adapter.tables(qset.query)

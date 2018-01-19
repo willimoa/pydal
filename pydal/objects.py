@@ -756,20 +756,17 @@ class Table(Serializable, BasicStorage):
                 f(row, ret)
         return ret
 
-    def _validate_fields(self, fields, defattr='default'):
+    def _validate_fields(self, fields):
         response = Row()
-        response.id, response.errors = None, Row()
-        new_fields = copy.copy(fields)
-        for fieldname in self.fields:
-            default = getattr(self[fieldname], defattr)
-            if callable(default):
-                default = default()
-            raw_value = fields.get(fieldname, default)
-            value, error = self[fieldname].validate(raw_value)
+        response.id, response.errors, new_fields = None, Row(), Row()
+        for field in self:
+            # we validate even if not passed in case it is required
+            value, error = field.validate(fields.get(field.name))
             if error:
-                response.errors[fieldname] = "%s" % error
-            elif value is not None:
-                new_fields[fieldname] = value
+                response.errors[field.name] = "%s" % error
+            elif field.name in fields:
+                # only write if the field was passed and no error
+                new_fields[field.name] = value
         return response, new_fields
 
     def validate_and_insert(self, **fields):
@@ -778,8 +775,8 @@ class Table(Serializable, BasicStorage):
             response.id = self.insert(**new_fields)
         return response
 
-    def validate_and_update(self, _key=DEFAULT, **fields):
-        response, new_fields = self._validate_fields(fields, 'update')
+    def validate_and_update(self, _key=DEFAULT, **fields):        
+        response, new_fields = self._validate_fields(fields)
         #: select record(s) for update
         if _key is DEFAULT:
             record = self(**fields)
@@ -799,7 +796,7 @@ class Table(Serializable, BasicStorage):
                     else:
                         query = query & (getattr(self, key) == value)
                 myset = self._db(query)
-            response.id = myset.update(**new_fields)
+            response.id = myset.update(**new_fields) and record[self._id.name]
         return response
 
     def update_or_insert(self, _key=DEFAULT, **values):
@@ -1524,7 +1521,7 @@ class Expression(object):
 
 class FieldVirtual(object):
     def __init__(self, name, f=None, ftype='string', label=None,
-                 table_name=None):
+                 table_name=None, readable=True, listable=True):
         # for backward compatibility
         (self.name, self.f) = (name, f) if f else ('unknown', name)
         self.type = ftype
@@ -1532,7 +1529,9 @@ class FieldVirtual(object):
         self.represent = lambda v, r=None: v
         self.formatter = IDENTITY
         self.comment = None
-        self.readable = True
+        self.readable = readable
+        self.listable = listable
+        self.searchable = False
         self.writable = False
         self.requires = None
         self.widget = None
@@ -1729,7 +1728,7 @@ class Field(Expression, Serializable):
             self_uploadfield.table.insert(**keys)
         elif self_uploadfield is True:
             if self.uploadfs:
-                dest_file = self.uploadfs.open(newfilename, 'wb')
+                dest_file = self.uploadfs.open(unicode(newfilename), 'wb')
             else:
                 if path:
                     pass
