@@ -32,7 +32,8 @@ class BaseAdapter(with_metaclass(AdapterMeta, ConnectionPool)):
 
     def __init__(self, db, uri, pool_size=0, folder=None, db_codec='UTF-8',
                  credential_decoder=IDENTITY, driver_args={},
-                 adapter_args={}, do_connect=True, after_connection=None):
+                 adapter_args={}, do_connect=True, after_connection=None,
+                 entity_quoting=False):
         super(BaseAdapter, self).__init__()
         self._load_dependencies()
         self.db = db
@@ -615,14 +616,14 @@ class SQLAdapter(BaseAdapter):
                 ijoin_tables, ijoin_on, itables_to_merge, ijoin_on_tables,
                 iimportant_tablenames, iexcluded, itablemap
             ) = self._build_joins_for_select(tablemap, join)
-            tablemap = merge_tablemaps(tablemap, dict(**itables_to_merge))
+            tablemap = merge_tablemaps(tablemap, itables_to_merge)
             tablemap = merge_tablemaps(tablemap, itablemap)
         if left:
             (
                 join_tables, join_on, tables_to_merge, join_on_tables,
                 important_tablenames, excluded, jtablemap
             ) = self._build_joins_for_select(tablemap, left)
-            tablemap = merge_tablemaps(tablemap, dict(**tables_to_merge))
+            tablemap = merge_tablemaps(tablemap, tables_to_merge)
             tablemap = merge_tablemaps(tablemap, jtablemap)
         current_scope = outer_scoped + list(tablemap)
         query_env = dict(current_scope=current_scope,
@@ -952,6 +953,7 @@ class NoSQLAdapter(BaseAdapter):
 
 
 class NullAdapter(BaseAdapter):
+
     def _load_dependencies(self):
         from ..dialects.base import CommonDialect
         self.dialect = CommonDialect(self)
