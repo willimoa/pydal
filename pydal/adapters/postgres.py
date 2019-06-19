@@ -5,6 +5,7 @@ from .._globals import IDENTITY, THREAD_LOCAL
 from ..drivers import psycopg2_adapt
 from ..helpers.classes import ConnectionConfigurationMixin
 from .base import SQLAdapter
+from ..utils import split_uri_args
 from . import AdapterMeta, adapters, with_connection, with_connection_or_raise
 
 
@@ -35,10 +36,11 @@ class Postgre(
     drivers = ('psycopg2', 'pg8000')
     support_distributed_transaction = True
 
-    REGEX_URI = re.compile(
-        '^(?P<user>[^:@]+)(:(?P<password>[^@]*))?'
-        '@(?P<host>[^:/]*)(:(?P<port>[0-9]+))?/(?P<db>[^?]+)'
-        '(\?sslmode=(?P<sslmode>[^?]+))?(\?(?P<ssl_flag>ssl))?(\?unix_socket=(?P<socket>.+))?$')
+    REGEX_URI = \
+         '^(?P<user>[^:@]+)(:(?P<password>[^@]*))?' \
+        r'@(?P<host>[^:/]*|\[[^\]]+\])(:(?P<port>\d+))?' \
+         '/(?P<db>[^?]+)' \
+        r'(\?(?P<uriargs>.*))?$'  # sslmode, ssl (no value) and unix_socket
 
     def __init__(self, db, uri, pool_size=0, folder=None, db_codec='UTF-8',
                  credential_decoder=IDENTITY, driver_args={},
@@ -52,13 +54,18 @@ class Postgre(
     def _initialize_(self, do_connect):
         super(Postgre, self)._initialize_(do_connect)
         ruri = self.uri.split('://', 1)[1]
-        m = self.REGEX_URI.match(ruri)
+        m = re.match(self.REGEX_URI, ruri)
         if not m:
             raise SyntaxError("Invalid URI string in DAL")
         user = self.credential_decoder(m.group('user'))
         password = self.credential_decoder(m.group('password'))
         host = m.group('host')
-        socket = m.group('socket')
+        uriargs = m.group('uriargs')
+        if uriargs:
+            uri_args = split_uri_args(uriargs, need_equal=False)
+        else:
+            uri_args = dict()
+        socket = uri_args.get('unix_socket')
         if not host and not socket:
             raise SyntaxError('Host or UNIX socket name required')
         db = m.group('db')
@@ -81,10 +88,10 @@ class Postgre(
         else:
             port = int(m.group('port') or 5432)
             self.driver_args.update(host=host, port=port)
-            sslmode = m.group('sslmode')
+            sslmode = uri_args.get('sslmode')
             if sslmode and self.driver_name == 'psycopg2':
                 self.driver_args['sslmode'] = sslmode
-            if m.group('ssl_flag') and self.driver_name == 'pg8000':
+            if 'ssl' in uri_args and self.driver_name == 'pg8000':
                 self.driver_args['ssl'] = True
         if self.driver:
             self.__version__ = "%s %s" % (self.driver.__name__,
@@ -245,32 +252,26 @@ class PostgrePG8000Boolean(PostgrePG8000New, PostgreBoolean):
 class JDBCPostgre(Postgre):
     drivers = ('zxJDBC',)
 
-    REGEX_URI = re.compile(
-        '^(?P<user>[^:@]+)(:(?P<password>[^@]*))?'
-        '@(?P<host>[^:/]+)(:(?P<port>[0-9]+))?/(?P<db>.+)$')
+    REGEX_URI = \
+         '^(?P<user>[^:@]+)(:(?P<password>[^@]*))?' \
+        r'@(?P<host>[^:/]+|\[[^\]]+\])(:(?P<port>\d+))?' \
+         '/(?P<db>[^?]+)$'
 
     def _initialize_(self, do_connect):
         super(Postgre, self)._initialize_(do_connect)
         ruri = self.uri.split('://', 1)[1]
-        m = self.REGEX_URI.match(ruri)
+        m = re.match(self.REGEX_URI, ruri)
         if not m:
             raise SyntaxError("Invalid URI string in DAL")
         user = self.credential_decoder(m.group('user'))
-        if not user:
-            raise SyntaxError('User required')
         password = self.credential_decoder(m.group('password'))
-        if not password:
+        if password is None:
             password = ''
         host = m.group('host')
-        if not host:
-            raise SyntaxError('Host name required')
         db = m.group('db')
-        if not db:
-            raise SyntaxError('Database name required')
         port = m.group('port') or '5432'
         self.dsn = (
             'jdbc:postgresql://%s:%s/%s' % (host, port, db), user, password)
-        # choose diver according uri
         if self.driver:
             self.__version__ = "%s %s" % (self.driver.__name__,
                                           self.driver.__version__)

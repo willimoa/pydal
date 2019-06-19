@@ -1,5 +1,6 @@
 import re
 from .base import SQLAdapter
+from ..utils import split_uri_args
 from . import adapters, with_connection
 
 
@@ -10,43 +11,47 @@ class MySQL(SQLAdapter):
     commit_on_alter_table = True
     support_distributed_transaction = True
 
-    REGEX_URI = re.compile(
-        '^(?P<user>[^:@]+)(\:(?P<password>[^@]*))?@(?P<host>\[[^/]+\]|' +
-        '[^\:/]*)(\:(?P<port>[0-9]+))?/(?P<db>[^?]+)(\?set_encoding=' +
-        '(?P<charset>\w+))?(\?unix_socket=(?P<socket>.+))?$')
+    REGEX_URI = \
+         '^(?P<user>[^:@]+)(:(?P<password>[^@]*))?' \
+        r'@(?P<host>[^:/]*|\[[^\]]+\])(:(?P<port>\d+))?' \
+         '/(?P<db>[^?]+)' \
+        r'(\?(?P<uriargs>.*))?$'  # set_encoding and unix_socket
 
     def _initialize_(self, do_connect):
         super(MySQL, self)._initialize_(do_connect)
         ruri = self.uri.split('://', 1)[1]
-        m = self.REGEX_URI.match(ruri)
+        m = re.match(self.REGEX_URI, ruri)
         if not m:
             raise SyntaxError("Invalid URI string in DAL")
         user = self.credential_decoder(m.group('user'))
-        if not user:
-            raise SyntaxError('User required')
         password = self.credential_decoder(m.group('password'))
-        if not password:
-            password = ''
         host = m.group('host')
-        socket = m.group('socket')
-        if not host and not socket:
-            raise SyntaxError('Host name required')
-        db = m.group('db')
-        if not db and not socket:
-            raise SyntaxError('Database name required')
-        port = int(m.group('port') or '3306')
-        charset = m.group('charset') or 'utf8'
-        if socket:
-            self.driver_args.update(
-                unix_socket=socket,
-                user=user, passwd=password,
-                charset=charset)
-            if db:
-                self.driver_args.update(db=db)
+        uriargs = m.group('uriargs')
+        if uriargs:
+            uri_args = split_uri_args(uriargs, need_equal=True)
+            charset = uri_args.get('set_encoding') or 'utf8'
+            socket = uri_args.get('unix_socket')
         else:
-            self.driver_args.update(
-                db=db, user=user, passwd=password, host=host, port=port,
-                charset=charset)
+            charset = 'utf8'
+            socket = None
+        # NOTE:
+        # MySQLdb (see http://mysql-python.sourceforge.net/MySQLdb.html)
+        # use UNIX sockets and named pipes by default if no host is given
+        # or host is 'localhost'; as opposed to
+        # pymysql (see https://pymysql.readthedocs.io/en/latest/modules/connections.html)
+        # or mysqlconnector (see https://dev.mysql.com/doc/connectors/en/connector-python-connectargs.html)
+        # driver, where you have to specify the socket explicitly.
+        if not host and not socket:
+            raise SyntaxError('Host or UNIX socket name required')
+        db = m.group('db')
+        port = int(m.group('port') or '3306')
+        self.driver_args.update(user=user, db=db, charset=charset)
+        if password is not None:
+            self.driver_args['passwd'] = password
+        if socket:
+            self.driver_args['unix_socket'] = socket
+        else:
+            self.driver_args.update(host=host, port=port)
 
     def connector(self):
         return self.driver.connect(**self.driver_args)
