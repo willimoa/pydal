@@ -3,7 +3,7 @@
 """
 | This file is part of the web2py Web Framework
 | Copyrighted by Massimo Di Pierro <mdipierro@cs.depaul.edu>
-| License: LGPLv3 (http://www.gnu.org/licenses/lgpl.html)
+| License: BSD
 |
 
 This file contains the DAL support for many relational databases, including:
@@ -598,7 +598,8 @@ class DAL(with_metaclass(MetaDAL, Serializable, BasicStorage)):
         kwargs_get = kwargs.get
         common_fields = self._common_fields
         if common_fields:
-            fields = list(fields) + [f if isinstance(f, Table) else f.clone() for f in common_fields]
+            fields = list(fields) + [f if isinstance(f, Table) else f.clone() 
+                                     for f in common_fields]
 
         table_class = kwargs_get('table_class', Table)
         table = table_class(self, tablename, *fields, **kwargs)

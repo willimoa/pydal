@@ -57,7 +57,7 @@ class Policy(object):
         'POST': {'authorize':False, 'fields':None},
         'PUT': {'authorize':False, 'fields':None},
         'DELETE': {'authorize':False},
-        'GET': {'authorize':False, 'fields':None, 'query':None, 'allowed_patterns':[], 'denied_patterns':[], 'limit': MAX_LIMIT}
+        'GET': {'authorize':False, 'fields':None, 'query':None, 'allowed_patterns':[], 'denied_patterns':[], 'limit': MAX_LIMIT, 'allow_lookup': False}
         }
 
     def __init__(self):
@@ -77,25 +77,50 @@ class Policy(object):
             raise PolicyViolation('No policy for this object')
         return maybe_call(policy[method][name])
 
-    def check_if_allowed(self, method, tablename, id=None, get_vars=None, post_vars=None):
+    def check_if_allowed(self, method, tablename, id=None, get_vars=None, post_vars=None, exceptions=True):
         get_vars = get_vars or {}
         post_vars = post_vars or {}
         policy = self.info.get(tablename) or self.info.get('*')
         if not policy:
-            raise PolicyViolation('No policy for this object')
+            if exceptions:
+                raise PolicyViolation('No policy for this object')
+            return False
         policy = policy.get(method.upper())
         if not policy:
-            raise PolicyViolation('No policy for this method')
+            if exceptions:
+                raise PolicyViolation('No policy for this method')
+            return False
         authorize = policy.get('authorize')
         if authorize is False or (callable(authorize) and not authorize(tablename, id, get_vars, post_vars)):
-            raise PolicyViolation('Not authorized')
+            if exceptions:
+                raise PolicyViolation('Not authorized')
+            return False
         for key in get_vars:
             if any(fnmatch.fnmatch(key, p) for p in policy['denied_patterns']):
-                raise PolicyViolation('Pattern is not allowed')
+                if exceptions:
+                    raise PolicyViolation('Pattern is not allowed')
+                return False
             allowed_patterns = policy['allowed_patterns']
             if '**' not in allowed_patterns and not any(fnmatch.fnmatch(key, p) for p in allowed_patterns):
-                raise PolicyViolation('Pattern is not explicitely allowed')
-        return
+                if exceptions:
+                    raise PolicyViolation('Pattern is not explicitely allowed')
+                return False
+        return True
+
+    def check_if_lookup_allowed(self, tablename, exceptions=True):
+        policy = self.info.get(tablename) or self.info.get('*')
+        if not policy:
+            if exceptions:
+                raise PolicyViolation('No policy for this object')
+            return False
+        policy = policy.get('GET')
+        if not policy:
+            if exceptions:
+                raise PolicyViolation('No policy for this method')
+            return False
+        if policy.get('allow_lookup'):
+            return True
+        return False
 
     def allowed_fieldnames(self, table, method='GET'):
         method = method.upper()
@@ -118,16 +143,16 @@ class Policy(object):
 
 DENY_ALL_POLICY = Policy()
 ALLOW_ALL_POLICY = Policy()
-ALLOW_ALL_POLICY.set(tablename='*', method='GET', authorize=True, allowed_patterns=['**'])
+ALLOW_ALL_POLICY.set(tablename='*', method='GET', authorize=True, allowed_patterns=['**'],allow_lookup=True)
 ALLOW_ALL_POLICY.set(tablename='*', method='POST', authorize=True)
 ALLOW_ALL_POLICY.set(tablename='*', method='PUT', authorize=True)
 ALLOW_ALL_POLICY.set(tablename='*', method='DELETE', authorize=True)
 
 class RestAPI(object):
 
-    re_table_and_fields = re.compile('\w+([\w+(,\w+)+])?')
-    re_lookups = re.compile('((\w*\!?\:)?(\w+(\[\w+(,\w+)*\])?)(\.\w+(\[\w+(,\w+)*\])?)*)')
-    re_no_brackets = re.compile('\[.*?\]')
+    re_table_and_fields = re.compile(r'\w+([\w+(,\w+)+])?')
+    re_lookups = re.compile(r'((\w*\!?\:)?(\w+(\[\w+(,\w+)*\])?)(\.\w+(\[\w+(,\w+)*\])?)*)')
+    re_no_brackets = re.compile(r'\[.*?\]')
 
     def __init__(self, db, policy):
         self.db = db
@@ -148,7 +173,7 @@ class RestAPI(object):
         # apply rules
         if method == 'GET':
             if id:
-                get_vars[tablename + '.eq'] = id
+                get_vars['id.eq'] = id
             return self.search(tablename, get_vars)
         elif method == 'POST':
             table =  self.db[tablename]
@@ -204,7 +229,8 @@ class RestAPI(object):
                 item['referenced_by'] = ['%s.%s' % (f._tablename, f.name)
                                          for f in table._referenced_by
                                          if self.policy and
-                                         self.policy.check_if_allowed('GET', f._tablename)]
+                                         self.policy.check_if_allowed('GET', f._tablename, 
+                                                                      exceptions=False)]
             items.append(item)
         return items
 
@@ -238,6 +264,10 @@ class RestAPI(object):
         def check_table_permission(tablename):
             if self.policy:
                 self.policy.check_if_allowed('GET', tablename)
+
+        def check_table_lookup_permission(tablename):
+            if self.policy:
+                self.policy.check_if_lookup_allowed(tablename)
 
         def filter_fieldnames(table, fieldnames):
             if self.policy:
@@ -347,7 +377,7 @@ class RestAPI(object):
                 ref_tablename = table[key].type.split(' ')[1]
                 ref_table = db[ref_tablename]
                 tfieldnames = filter_fieldnames(ref_table, tfieldnames)
-                check_table_permission(ref_tablename)
+                check_table_lookup_permission(ref_tablename)
                 ids = [row[key] for row in rows]
                 tfields = [ref_table[tfieldname] for tfieldname in tfieldnames]
                 if not 'id' in tfieldnames:
@@ -358,8 +388,8 @@ class RestAPI(object):
                         del row['id']
                 lkey, collapsed = lookup_map[key]['name'], lookup_map[key]['collapsed']
                 for row in rows:
-                    new_row = drows[row[key]]
-                    if collapsed:
+                    new_row = drows.get(row[key])
+                    if new_row and collapsed:
                         del row[key]
                         for rkey in new_row:
                             row[lkey + '_' + rkey] = new_row[rkey]
@@ -369,7 +399,7 @@ class RestAPI(object):
             elif len(key) == 2:
                 lfield, key = key
                 key, tfieldnames = RestAPI.parse_table_and_fields(key)
-                check_table_permission(key)
+                check_table_lookup_permission(key)
                 ref_table = db[key]
                 tfieldnames = filter_fieldnames(ref_table, tfieldnames)
                 ids = [row['id'] for row in rows]
@@ -391,10 +421,10 @@ class RestAPI(object):
                 lfield, key, rfield = key
                 key, tfieldnames = RestAPI.parse_table_and_fields(key)
                 rfield, tfieldnames2 = RestAPI.parse_table_and_fields(rfield)
-                check_table_permission(key)
+                check_table_lookup_permission(key)
                 ref_table = db[key]
                 ref_ref_tablename = ref_table[rfield].type.split(' ')[1]
-                check_table_permission(ref_ref_tablename)
+                check_table_lookup_permission(ref_ref_tablename)
                 ref_ref_table = db[ref_ref_tablename]
                 tfieldnames = filter_fieldnames(ref_table, tfieldnames)
                 tfieldnames2 = filter_fieldnames(ref_ref_table, tfieldnames2)
