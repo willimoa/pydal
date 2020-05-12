@@ -83,10 +83,11 @@ class Policy(object):
 
     def set(self, tablename, method, **attributes):
         method = method.upper()
-        if not method in self.model or any(
-            key not in self.model[method] for key in attributes
-        ):
-            raise InvalidFormat("Invalid policy format")
+        if not method in self.model:
+            raise InvalidFormat("Invalid policy method: %s" % method)
+        invalid_keys = [key for key in attributes if key not in self.model[method]]
+        if invalid_keys:
+            raise InvalidFormat("Invalid keys: %s" % ','.join(invalid_keys))
         if not tablename in self.info:
             self.info[tablename] = copy.deepcopy(self.model)
         self.info[tablename][method].update(attributes)
@@ -201,8 +202,9 @@ class RestAPI(object):
         get_vars = get_vars or {}
         post_vars = post_vars or {}
         # validate incoming request
-        if not tablename in self.db.tables:
-            raise InvalidFormat("Invalid table name: %s" % tablename)
+        tname, tfieldnames = RestAPI.parse_table_and_fields(tablename)
+        if not tname in self.db.tables:
+            raise InvalidFormat("Invalid table name: %s" % tname)
         if self.policy:
             self.policy.check_if_allowed(method, tablename, id, get_vars, post_vars)
             if method in ["POST", "PUT"]:
@@ -248,8 +250,6 @@ class RestAPI(object):
             if fieldnames and not fieldname in fieldnames:
                 continue
             field = table[fieldname]
-            if not field.readable and not field.writable:
-                continue
             item = {"name": field.name, "label": field.label}
             # https://github.com/collection-json/extensions/blob/master/template-validation.md
             item["default"] = (
@@ -332,6 +332,7 @@ class RestAPI(object):
         offset = 0
         limit = 100
         model = False
+        options_list = False
         table = db[tname]
         queries = []
         if self.policy:
@@ -364,6 +365,8 @@ class RestAPI(object):
                 lookup = {item[0]: {} for item in RestAPI.re_lookups.findall(value)}
             elif key == "@model":
                 model = str(value).lower()[:1] == "t"
+            elif key == "@options_list":
+                options_list = str(value).lower()[:1] == "t"
             else:
                 key_parts = key.rsplit(".")
                 if not key_parts[-1] in (
@@ -374,6 +377,8 @@ class RestAPI(object):
                     "ge",
                     "le",
                     "startswith",
+                    "contains",
+                    "in"
                 ):
                     key_parts.append("eq")
                 is_negated = key_parts[0] == "not"
@@ -531,7 +536,15 @@ class RestAPI(object):
                     row[lkey] = drows.get(row.id, [])
 
         response = {}
-        response["items"] = rows.as_list()
+        if not options_list:
+            response["items"] = rows.as_list()
+        else:
+            if table._format:
+                response["items"] = [dict(value=row.id, text=(
+                    table._format % row)) for row in rows]
+            else:
+                response["items"] = [dict(value=row.id, text=row.id)
+                    for row in rows]
         if offset == 0:
             response["count"] = db(query).count()
         if model:
