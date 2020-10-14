@@ -5,7 +5,7 @@ from . import adapters
 @adapters.register_for("teradata")
 class Teradata(SQLAdapter):
     dbengine = ""
-    drivers = ("pyodbc",)
+    drivers = ("pyodbc", "teradatasql")
 
     def _initialize_(self):
         super(Teradata, self)._initialize_()

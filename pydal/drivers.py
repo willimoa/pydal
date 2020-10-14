@@ -178,3 +178,11 @@ try:
     DRIVERS["pytds"] = pytds
 except:
     pass
+
+try:
+    import teradatasql
+
+    DRIVERS['teradatasql'] = teradatasql
+except ImportError:
+    pass
+
